@@ -214,8 +214,9 @@ async function startServer() {
         res.set('Set-Cookie', `webinar_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
         res.json({ success: true });
     });
-    // 1. GET /api/config
-    app.get('/api/config', async (req, res) => {
+    // Both paths are supported: /config for the deployed frontend and
+    // /api/config for existing API clients and local development.
+    const sendPublicConfig = async (req, res) => {
         try {
             const config = await loadConfig();
             res.json({ success: true, data: config });
@@ -223,7 +224,8 @@ async function startServer() {
         catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
-    });
+    };
+    app.get(['/config', '/api/config'], sendPublicConfig);
     // 2. PUT /api/config (Admin updates form & college details)
     app.put('/api/config', requireAdmin, async (req, res) => {
         try {

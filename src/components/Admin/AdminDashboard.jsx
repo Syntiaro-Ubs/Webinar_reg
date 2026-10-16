@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DEFAULT_WEBINAR_CONFIG } from '../../data/defaultConfig';
 import { SuccessReceiptModal } from '../SuccessReceiptModal';
-import { saveBackendConfig, updateBackendStatus, deleteBackendRegistration, resendEmailReceipt, fetchAdminSession, loginAdmin, logoutAdmin } from '../../utils/api';
+import { apiUrl, saveBackendConfig, updateBackendStatus, deleteBackendRegistration, resendEmailReceipt, fetchAdminSession, loginAdmin, logoutAdmin } from '../../utils/api';
 import { Settings, Users, Search, Plus, Trash2, CheckCircle, Calendar, Clock, XCircle, Save, RotateCcw, Eye, FileSpreadsheet, QrCode, Building2, BookOpen, MessageCircle, ShieldCheck, Check, Send, BarChart3, X, Copy, Share2, Link2, Timer, ToggleLeft, ToggleRight } from 'lucide-react';
 export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefreshRegistrations, onAdminLogout }) => {
     const [activeTab, setActiveTab] = useState('submissions');
@@ -50,7 +50,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
         return () => { mounted = false; };
     }, []);
     useEffect(() => {
-        fetch('/api/share-link')
+        fetch(apiUrl('/api/share-link'))
             .then((res) => res.json())
             .then((json) => {
                 if (json.success && json.data?.studentUrl) {
