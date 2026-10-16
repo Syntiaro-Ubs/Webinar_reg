@@ -63,6 +63,40 @@ npm run dev:fullstack
 npm run backend:clear
 ```
 
+## Hostinger deployment
+
+Deploy this repository from its **project root**, not from the `backend/` subfolder. The server loads `.env` from the project root and serves the built frontend from the root `dist/` directory.
+
+From the project root, install dependencies and build the frontend:
+
+```bash
+npm install
+npm --prefix backend install
+npm run build
+```
+
+Use `npm start` as the start command. It runs `backend/server.js`, which binds to `0.0.0.0` and uses Hostinger's `PORT` environment variable (falling back to `3000` for local use). The production site is served at `/`; the backend health endpoint is `/api/health`.
+
+Configure these values in Hostinger's environment settings. Do not commit them in `.env`:
+
+```env
+NODE_ENV=production
+APP_URL=https://your-domain.example
+DB_HOST=your-hostinger-mysql-host
+DB_PORT=3306
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+DB_NAME=your_database_name
+ADMIN_PASSWORD=use-a-unique-random-password-at-least-12-characters
+SMTP_HOST=your-smtp-host
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_FROM=your-sender-address
+```
+
+Hostinger supplies `PORT`; leave it unset in production unless its Node.js application setup explicitly asks you to enter the assigned value. Make sure the MySQL database and user exist in Hostinger before starting the app. Locally, run `npm start` from the project root after installing dependencies and setting up `.env` to test the production server on `http://localhost:3000`.
+
 ## API Endpoints
 
 - `GET /api/config` - Get application configuration

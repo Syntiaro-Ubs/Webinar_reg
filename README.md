@@ -123,6 +123,8 @@ To enable email receipts:
 
 Production must use `NODE_ENV=production`, a strong `ADMIN_PASSWORD` (12+ characters), an HTTPS `APP_URL`, HTTPS termination, a restricted MySQL account, and valid SMTP settings. The admin API protects student records and payment actions; keep the admin password private. Build the frontend with `npm run build` before starting the production backend.
 
+For Hostinger deployment, deploy from the project root, build the frontend, and use `npm start` as the start command. The backend uses Hostinger's `PORT` and serves the built frontend from `dist/`. See [backend/README.md](backend/README.md#hostinger-deployment) for install commands and required environment variables.
+
 ## Technologies Used
 
 ### Backend

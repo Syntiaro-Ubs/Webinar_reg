@@ -118,8 +118,12 @@ async function startServer() {
     }
     const app = express();
     const httpServer = http.createServer(app);
-    const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-    const standaloneFrontend = process.argv.includes('--api-only');
+    const PORT = Number(process.env.PORT || 3000);
+    if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+        throw new Error(`Invalid PORT value: ${process.env.PORT}`);
+    }
+    const apiOnly = process.argv.includes('--api-only');
+    const standaloneFrontend = apiOnly;
     const FRONTEND_PORT = Number(process.env.FRONTEND_PORT || (standaloneFrontend ? 5173 : PORT));
     function lanStudentUrls() {
         const ips = [];
@@ -158,6 +162,11 @@ async function startServer() {
     }
     app.use(express.json({ limit: '1mb' }));
     // ================= API ROUTES =================
+    if (apiOnly) {
+        app.get('/', (req, res) => {
+            res.json({ success: true, message: 'Webinar registration API is running', health: '/api/health' });
+        });
+    }
     app.get('/api/health', (req, res) => {
         res.json({ success: true, data: { status: 'ok', database: process.env.DB_NAME || 'webinar_reg' } });
     });
@@ -459,10 +468,10 @@ async function startServer() {
     });
     // ================= FRONTEND MIDDLEWARE =================
     // Use --api-only to run the backend separately from the standalone Vite dev server.
-    const apiOnly = process.argv.includes('--api-only');
     if (!apiOnly && process.env.NODE_ENV !== 'production') {
         const { createServer: createViteServer } = await import('vite');
         const vite = await createViteServer({
+            root: path.resolve(__dirname, '..'),
             server: {
                 middlewareMode: true,
                 allowedHosts: true,

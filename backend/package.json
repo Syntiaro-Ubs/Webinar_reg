@@ -2,6 +2,7 @@
   "name": "webinar-registration-backend",
   "private": true,
   "version": "1.0.0",
+  "main": "server.js",
   "type": "module",
   "scripts": {
     "dev": "node server.js",
