@@ -1,0 +1,6 @@
+{
+  "name": "Webinar Registration & UPI Portal",
+  "description": "Student webinar registration system with customizable college branding, direct UPI payment, instant email receipt generation, WhatsApp community join, and admin management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

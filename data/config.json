@@ -1,0 +1,46 @@
+{
+  "collegeName": "Pune Institute of Computer Technology (PICT)",
+  "collegeSubtitle": "Department of Computer Engineering & Industry Innovation Cell",
+  "collegeLogoUrl": "https://images.unsplash.com/photo-1562774053-701939374585?w=160&auto=format&fit=crop&q=80",
+  "webinarTitle": "National Masterclass on Agentic AI & Enterprise Intelligence Systems",
+  "webinarSubtitle": "Comprehensive industry masterclass on building autonomous multi-agent systems, multimodal pipelines, and production deployment architectures.",
+  "webinarDate": "Saturday, October 24, 2026",
+  "webinarTime": "10:00 AM - 01:30 PM IST",
+  "feeAmount": 1000,
+  "upiId": "Q021076100@ybl",
+  "payeeName": "VedhaAI",
+  "upiTerminalText": "Terminal 6-Q021076100",
+  "whatsappGroupLink": "https://chat.whatsapp.com/invite/VedhaAI-Student-Webinar-2026",
+  "supportEmail": "webinar.support@vedhaai.edu.in",
+  "supportPhone": "+91 98230 45678",
+  "bannerNotice": "⚡ Limited 150 Seats Available · E-Certificates & Project Repositories Included",
+  "availableStreams": [
+    "Computer Engineering (CS/CE)",
+    "Information Technology (IT)",
+    "Artificial Intelligence & Data Science (AI & DS)",
+    "Electronics & Telecommunication (E&TC)",
+    "Mechanical Engineering",
+    "Civil Engineering",
+    "Bachelor of Computer Applications (BCA)",
+    "Master of Computer Applications (MCA)",
+    "B.Sc Computer Science / IT",
+    "Other / Multidisciplinary"
+  ],
+  "availableYears": [
+    "1st Year (Freshman)",
+    "2nd Year (Sophomore)",
+    "3rd Year (Junior)",
+    "4th Year (Senior / Final Year)",
+    "Post Graduate (M.Tech / MCA / M.Sc)"
+  ],
+  "availableSemesters": [
+    "Semester 1",
+    "Semester 2",
+    "Semester 3",
+    "Semester 4",
+    "Semester 5",
+    "Semester 6",
+    "Semester 7",
+    "Semester 8"
+  ]
+}
