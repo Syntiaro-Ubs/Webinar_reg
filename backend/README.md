@@ -75,7 +75,7 @@ npm --prefix backend install
 npm run build
 ```
 
-Use `npm start` as the start command. It runs `backend/server.js`, which binds to `0.0.0.0` and uses Hostinger's `PORT` environment variable (falling back to `3000` for local use). The production site is served at `/`; the backend health endpoint is `/api/health`.
+Use `npm start` as the start command and `server.js` as the application entry file. The root `server.js` loads the implementation from `backend/server.js`; the Express server binds to `0.0.0.0` and uses Hostinger's `PORT` environment variable (falling back to `3000` for local use). The production site is served at `/`; the backend health endpoint is `/api/health`.
 
 Configure these values in Hostinger's environment settings. Do not commit them in `.env`:
 
