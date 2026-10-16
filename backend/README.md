@@ -77,7 +77,7 @@ npm run build
 
 Use `npm start` as the start command and the repository-root `server.js` as the application entry file. The Express routes, production static serving, and `app.listen(PORT, '0.0.0.0')` are defined in that root file. The backend-local `server.js` forwards existing backend scripts to it. Production serves the built frontend from the root `dist/` directory. Health endpoints are `/health` and `/api/health`.
 
-In Hostinger's build environment, set `VITE_API_URL=https://webinarenrollment.vedhaai.in` before running `npm run build`. The frontend fetches configuration from `/config`; the server also keeps `/api/config` available for existing clients. Because the frontend and API share this origin, no CORS configuration is needed.
+In Hostinger's build environment, set `VITE_API_URL=https://webinarenrollment.vedhaai.in` before running `npm run build`. `GET /config` is a simple server status endpoint; the frontend fetches its dynamic configuration from `/api/config`. Because the frontend and API share this origin, no CORS configuration is needed.
 
 Configure these values in Hostinger's environment settings. Do not commit them in `.env`:
 
@@ -101,7 +101,8 @@ Hostinger supplies `PORT`; leave it unset in production unless its Node.js appli
 
 ## API Endpoints
 
-- `GET /config` and `GET /api/config` - Get application configuration
+- `GET /config` - Return server status
+- `GET /api/config` - Get application configuration
 - `PUT /api/config` - Update configuration (admin)
 - `GET /api/registrations` - Get all registrations
 - `POST /api/registrations` - Create new registration

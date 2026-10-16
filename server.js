@@ -176,6 +176,12 @@ async function startServer() {
     app.get('/api/share-link', (req, res) => {
         res.json({ success: true, data: getStudentShareLinks(req) });
     });
+    app.get('/config', (req, res) => {
+        res.status(200).json({
+            status: 'ok',
+            apiUrl: '/',
+        });
+    });
     app.post('/api/admin/login', (req, res) => {
         const configuredPassword = process.env.ADMIN_PASSWORD || '';
         if (configuredPassword.length < 12) {
@@ -217,8 +223,7 @@ async function startServer() {
         res.set('Set-Cookie', `webinar_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
         res.json({ success: true });
     });
-    // Both paths are supported: /config for the deployed frontend and
-    // /api/config for existing API clients and local development.
+    // Dynamic application configuration used by the frontend.
     const sendPublicConfig = async (req, res) => {
         try {
             const config = await loadConfig();
@@ -228,7 +233,7 @@ async function startServer() {
             res.status(500).json({ success: false, error: err.message });
         }
     };
-    app.get(['/config', '/api/config'], sendPublicConfig);
+    app.get('/api/config', sendPublicConfig);
     // 2. PUT /api/config (Admin updates form & college details)
     app.put('/api/config', requireAdmin, async (req, res) => {
         try {

@@ -7,7 +7,7 @@ export const apiUrl = (path) => `${API_URL}${path}`;
 
 // Helper to interact with the Express backend
 export async function fetchBackendConfig() {
-    const res = await fetch(`${API_URL}/config`);
+    const res = await fetch(apiUrl('/api/config'));
     if (!res.ok) throw new Error('Failed to fetch config');
     const json = await res.json();
     return { ...DEFAULT_WEBINAR_CONFIG, ...json.data };
