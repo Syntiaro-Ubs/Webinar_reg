@@ -6,8 +6,9 @@ A full-stack webinar registration application with student registration form, ad
 
 ```
 webinar-registration/
+├── server.js            # Root Express entry and API routes
 ├── backend/              # Backend server (Node.js + Express + MySQL)
-│   ├── server.js        # Main server with API routes
+│   ├── server.js        # Backend-local entry forwarding to the root server
 │   ├── db.js            # Database operations
 │   ├── email.js         # Email service
 │   ├── package.json     # Backend dependencies

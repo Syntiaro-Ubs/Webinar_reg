@@ -6,7 +6,7 @@ This folder contains the backend server for the Webinar Registration System.
 
 ```
 backend/
-├── server.js              # Express server with API routes and Vite dev server
+├── server.js              # Backend-local entry forwarding to the root Express server
 ├── db.js                  # MySQL database connection and operations
 ├── email.js               # Email service for sending registration receipts
 ├── receipt-pdf.js          # Generates downloadable PDF receipts
@@ -75,7 +75,7 @@ npm --prefix backend install
 npm run build
 ```
 
-Use `npm start` as the start command and `server.js` as the application entry file. The root `server.js` loads the implementation from `backend/server.js`; the Express server binds to `0.0.0.0` and uses Hostinger's `PORT` environment variable (falling back to `3000` for local use). The production site is served at `/`; the backend health endpoint is `/api/health`.
+Use `npm start` as the start command and the repository-root `server.js` as the application entry file. The Express routes, production static serving, and `app.listen(PORT, '0.0.0.0')` are defined in that root file. The backend-local `server.js` forwards existing backend scripts to it. Production serves the built frontend from the root `dist/` directory. Health endpoints are `/health` and `/api/health`.
 
 In Hostinger's build environment, set `VITE_API_URL=https://webinarenrollment.vedhaai.in` before running `npm run build`. The frontend fetches configuration from `/config`; the server also keeps `/api/config` available for existing clients. Because the frontend and API share this origin, no CORS configuration is needed.
 
