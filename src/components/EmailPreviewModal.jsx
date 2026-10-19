@@ -56,10 +56,10 @@ export const EmailPreviewModal = ({ registration, config, isOpen, onClose }) => 
               {config.collegeName}
             </div>
             <h2 className="text-xl font-bold text-slate-900">
-              Hello {registration.firstName}, {registration.paymentStatus === 'verified' ? 'your registration and payment are confirmed.' : 'we received your registration. Payment is pending verification.'}
+              Hello {registration.firstName}, {registration.paymentStatus === 'verified' ? 'your registration and payment are confirmed.' : 'we received your registration. The submitted UPI reference has not been verified.'}
             </h2>
             <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-              Thank you for registering for <strong className="text-slate-900">{config.webinarTitle}</strong>. Your payment of <strong className="text-slate-900">₹{registration.amount}</strong> via UPI has been recorded and verified.
+              Thank you for registering for <strong className="text-slate-900">{config.webinarTitle}</strong>. {registration.paymentStatus === 'verified' ? <>Your payment of <strong className="text-slate-900">₹{registration.amount}</strong> via {registration.payerUpiApp || 'UPI'} has been verified.</> : <>The submitted UPI reference is recorded, but this app has not confirmed payment.</>}
             </p>
           </div>
 
@@ -88,8 +88,10 @@ export const EmailPreviewModal = ({ registration, config, isOpen, onClose }) => 
                 <span className="font-semibold text-slate-900">{registration.year} · {registration.semester}</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[11px]">UPI UTR / Ref:</span>
-                <span className="font-mono font-semibold text-slate-900">{registration.utrNumber}</span>
+                {(registration.cashfreeOrderId || registration.utrNumber) && <>
+                  <span className="text-slate-500 block text-[11px]">Payment reference:</span>
+                  <span className="font-mono font-semibold text-slate-900">{registration.cashfreeOrderId || registration.utrNumber}</span>
+                </>}
               </div>
               <div className="col-span-2">
                 <span className="text-slate-500 block text-[11px]">Event Date &amp; Timing:</span>

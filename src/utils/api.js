@@ -51,6 +51,14 @@ export async function fetchBackendRegistrations() {
     const json = await res.json();
     return json.data;
 }
+export async function getCashfreePaymentStatus(orderId) {
+    const res = await fetch(apiUrl(`/api/payments/cashfree/${encodeURIComponent(orderId)}/status`), {
+        cache: 'no-store'
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not check Cashfree payment status');
+    return json;
+}
 export async function createBackendRegistration(payload) {
     const res = await fetch(apiUrl('/api/registrations'), {
         method: 'POST',
@@ -60,63 +68,6 @@ export async function createBackendRegistration(payload) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Registration failed');
     return json.data;
-}
-export async function fetchBackendRegistrationStatus(id) {
-    const res = await fetch(apiUrl(`/api/registrations/${encodeURIComponent(id)}/status`));
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || 'Failed to check payment status');
-    return json.data;
-}
-export async function updateBackendStatus(id, status, notes) {
-    try {
-        const res = await fetch(apiUrl(`/api/registrations/${id}/status`), {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status, notes })
-        });
-        if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
-            throw new Error(json.error || 'Failed to update registration status');
-        }
-        const json = await res.json().catch(() => ({}));
-        return json.data || { status, emailSent: false };
-    }
-    catch (err) {
-        console.error('Error updating status on backend:', err);
-        throw err;
-    }
-}
-export async function deleteBackendRegistration(id) {
-    try {
-        const res = await fetch(apiUrl(`/api/registrations/${id}`), {
-            method: 'DELETE'
-        });
-        if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
-            throw new Error(json.error || 'Failed to delete registration');
-        }
-        return true;
-    }
-    catch (err) {
-        console.error('Error deleting registration on backend:', err);
-        throw err;
-    }
-}
-export async function resendEmailReceipt(id) {
-    try {
-        const res = await fetch(apiUrl(`/api/registrations/${id}/resend-email`), {
-            method: 'POST'
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            throw new Error(json.error || 'Failed to resend receipt email');
-        }
-        return true;
-    }
-    catch (err) {
-        console.error('Error resending email:', err);
-        return false;
-    }
 }
 export async function downloadReceiptPdf(id, regNumber) {
     try {

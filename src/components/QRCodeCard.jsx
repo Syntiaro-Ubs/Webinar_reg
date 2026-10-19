@@ -1,16 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { Copy, Check, Smartphone, ShieldCheck, ArrowUpRight, X } from 'lucide-react';
+import { Copy, Check, Smartphone, ArrowUpRight, X } from 'lucide-react';
 export const QRCodeCard = ({ upiId, payeeName, terminalText, amount, webinarTitle, onUpiAppClick, showAppButtons = false }) => {
     const [copied, setCopied] = useState(false);
     const [showRedirectModal, setShowRedirectModal] = useState(false);
     const canvasRef = useRef(null);
-    // NPCI standard UPI URLs with exact ₹1,000 fee
+    const canLaunchUpiApp = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const encodedTitle = encodeURIComponent(`${webinarTitle || 'Webinar'} Registration Fee`);
     const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodedTitle}`;
-    const gpayLink = `gpay://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodedTitle}`;
-    const phonepeLink = `phonepe://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodedTitle}`;
-    const paytmLink = `paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodedTitle}`;
     useEffect(() => {
         if (canvasRef.current) {
             QRCode.toCanvas(canvasRef.current, upiLink, {
@@ -35,6 +32,16 @@ export const QRCodeCard = ({ upiId, payeeName, terminalText, amount, webinarTitl
     const handleQRClick = (e) => {
         e.preventDefault();
         setShowRedirectModal(true);
+    };
+    const handleUpiAppClick = (e) => {
+        e.preventDefault();
+        if (!canLaunchUpiApp) {
+            setShowRedirectModal(true);
+            return;
+        }
+        onUpiAppClick?.('UPI');
+        setShowRedirectModal(false);
+        window.location.assign(upiLink);
     };
     return (<div className="w-full flex flex-col items-center">
       {/* Physical Terminal Style Card */}
@@ -108,112 +115,54 @@ export const QRCodeCard = ({ upiId, payeeName, terminalText, amount, webinarTitl
         </div>
       </div>
 
-      {/* 1-Tap App Payment Action Buttons */}
+      {/* UPI App Payment Action */}
       {showAppButtons && (
         <div className="w-full max-w-[310px] mt-4 space-y-2">
           <div className="text-center">
             <span className="text-xs font-medium text-slate-700">
-              Tap to Pay ₹{amount} Directly in App
+              Pay ₹{amount} with a UPI app
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {/* PhonePe Button */}
-            <a href={phonepeLink} onClick={() => onUpiAppClick?.('PhonePe')} className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/80 text-[#5f259f] font-medium text-xs transition-all shadow-xs">
-              <span className="w-4 h-4 rounded-full bg-[#5f259f] text-white text-[9px] flex items-center justify-center font-bold">पे</span>
-              <span>PhonePe</span>
-              <ArrowUpRight className="w-3 h-3 opacity-60"/>
-            </a>
-
-            {/* Google Pay Button */}
-            <a href={gpayLink} onClick={() => onUpiAppClick?.('Google Pay')} className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 font-medium text-xs transition-all shadow-xs">
-              <span className="font-bold text-blue-600 text-xs">G</span>
-              <span>Google Pay</span>
-              <ArrowUpRight className="w-3 h-3 opacity-60"/>
-            </a>
-
-            {/* Paytm Button */}
-            <a href={paytmLink} onClick={() => onUpiAppClick?.('Paytm')} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs transition-all shadow-xs">
-              <span className="font-bold text-[#00b9f5] text-xs">P</span>
-              <span>Paytm UPI</span>
-              <ArrowUpRight className="w-3 h-3 opacity-60"/>
-            </a>
-
-            {/* Other UPI */}
-            <a href={upiLink} onClick={() => onUpiAppClick?.('Other UPI')} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs transition-all shadow-xs">
-              <Smartphone className="w-3.5 h-3.5 text-slate-500"/>
-              <span>Any UPI App</span>
+          <div className="flex justify-center">
+            <a href={upiLink} onClick={handleUpiAppClick} className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/80 text-[#5f259f] font-medium text-xs transition-all shadow-xs">
+              <Smartphone className="w-3.5 h-3.5"/>
+              <span>Open UPI App</span>
               <ArrowUpRight className="w-3 h-3 opacity-60"/>
             </a>
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600"/>
-            <span>Pay in your UPI app, then submit the transaction reference shown there.</span>
-          </div>
         </div>
       )}
 
-      {/* Redirect Modal for Desktop */}
+      {/* UPI app launch fallback */}
       {showRedirectModal && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <div>
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Pay ₹{amount} via UPI App
-                </h4>
-                <p className="text-xs text-slate-500">
-                  Select your installed UPI application
-                </p>
+                <h4 className="text-sm font-semibold text-slate-900">Pay ₹{amount} via UPI</h4>
+                <p className="text-xs text-slate-500">{canLaunchUpiApp ? 'Continue with an installed UPI app' : 'This browser cannot open UPI apps'}</p>
               </div>
               <button onClick={() => setShowRedirectModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-700">
                 <X className="w-4 h-4"/>
               </button>
             </div>
 
-            <div className="space-y-2">
-              <a href={phonepeLink} onClick={() => {
-                onUpiAppClick?.('PhonePe');
-                setShowRedirectModal(false);
-            }} className="w-full flex items-center justify-between p-3 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/80 text-purple-900 font-medium text-xs transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-[#5f259f] text-white flex items-center justify-center font-bold text-xs">पे</span>
-                  <div>
-                    <span className="block font-semibold">Pay with PhonePe</span>
-                    <span className="text-[11px] text-purple-700">Open PhonePe application</span>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-purple-600"/>
+            {canLaunchUpiApp ? (
+              <a href={upiLink} onClick={handleUpiAppClick} className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100/80 text-purple-900 font-medium text-xs transition-colors">
+                <Smartphone className="w-4 h-4"/>
+                <span>Open UPI App</span>
+                <ArrowUpRight className="w-4 h-4"/>
               </a>
-
-              <a href={gpayLink} onClick={() => {
-                onUpiAppClick?.('Google Pay');
-                setShowRedirectModal(false);
-            }} className="w-full flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 text-blue-900 font-medium text-xs transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-white border border-blue-200 text-blue-600 flex items-center justify-center font-bold text-xs">G</span>
-                  <div>
-                    <span className="block font-semibold">Pay with Google Pay</span>
-                    <span className="text-[11px] text-blue-700">Open Google Pay application</span>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-blue-600"/>
-              </a>
-
-              <a href={upiLink} onClick={() => {
-                onUpiAppClick?.('Other UPI');
-                setShowRedirectModal(false);
-            }} className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium text-xs transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <Smartphone className="w-5 h-5 text-slate-600"/>
-                  <div>
-                    <span className="block font-semibold">Any Other UPI App</span>
-                    <span className="text-[11px] text-slate-500">Paytm, BHIM, Cred, etc.</span>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-500"/>
-              </a>
-            </div>
+            ) : (
+              <div className="space-y-3 text-center">
+                <p className="text-xs text-slate-600">Close this dialog and scan the QR code with your phone, or copy the UPI ID to pay manually.</p>
+                <button type="button" onClick={handleCopy} className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-medium text-xs transition-colors">
+                  {copied ? <Check className="w-4 h-4"/> : <Copy className="w-4 h-4"/>}
+                  <span>{copied ? 'UPI ID copied' : 'Copy UPI ID'}</span>
+                </button>
+              </div>
+            )}
 
             <div className="text-[11px] text-slate-400 text-center pt-1 border-t border-slate-100">
               UPI VPA: <span className="font-mono text-slate-700 font-medium">{upiId}</span>

@@ -53,7 +53,7 @@ export const CollegeHeader = ({ config }) => {
               </div>
             </div>
             <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1 mt-0.5">
-              <CheckCircle2 className="w-3.5 h-3.5"/> Direct UPI Settlement
+              <CheckCircle2 className="w-3.5 h-3.5"/> Cashfree Payments
             </span>
           </div>
         </div>

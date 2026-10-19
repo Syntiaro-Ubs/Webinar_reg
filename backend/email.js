@@ -11,23 +11,34 @@ function escapeHtml(value) {
 }
 
 function buildReceiptHtml(registration, config) {
+  const paymentVerified = registration.paymentStatus === 'verified';
   const name = escapeHtml([registration.firstName, registration.middleName, registration.lastName].filter(Boolean).join(' '));
   const title = escapeHtml(config.webinarTitle);
   const college = escapeHtml(config.collegeName);
-  const whatsapp = escapeHtml(config.whatsappGroupLink);
+  const whatsapp = paymentVerified ? escapeHtml(config.whatsappGroupLink) : '';
+  const paymentReference = registration.cashfreeOrderId || registration.utrNumber;
+  const paymentDetails = paymentVerified
+    ? `Your payment of <strong>₹${escapeHtml(registration.amount)}</strong> via ${escapeHtml(registration.payerUpiApp || 'UPI')} is confirmed.`
+    : 'Your registration has been received. Payment confirmation is pending from Cashfree.';
+  const whatsappSection = paymentVerified && whatsapp
+    ? `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
+          <div style="font-size:14px;font-weight:bold;color:#065f46;margin-bottom:6px;">Join the WhatsApp community</div>
+          <p style="margin:0 0 10px;font-size:13px;color:#047857;">Event updates, slides, and certificates will be shared in this group.</p>
+          <a href="${whatsapp}" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;font-size:13px;font-weight:bold;padding:10px 14px;border-radius:8px;">Join WhatsApp Group</a>
+        </div>`
+    : '';
   return `<!DOCTYPE html>
 <html>
   <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a;">
     <div style="max-width:640px;margin:24px auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
       <div style="background:#020617;color:#fff;padding:24px 28px;">
-        <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#34d399;font-weight:bold;">Official Delegate Pass &amp; Receipt</div>
-        <h1 style="margin:8px 0 0;font-size:22px;">Registration Confirmed</h1>
-        <p style="margin:8px 0 0;color:#cbd5e1;font-size:14px;">Hello ${escapeHtml(registration.firstName)}, your seat for <strong style="color:#fff;">${title}</strong> is secured.</p>
+        <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#34d399;font-weight:bold;">${paymentVerified ? 'Official Payment Receipt' : 'Registration Confirmation'}</div>
+        <h1 style="margin:8px 0 0;font-size:22px;">${paymentVerified ? 'Registration Confirmed' : 'Registration Successful'}</h1>
+        <p style="margin:8px 0 0;color:#cbd5e1;font-size:14px;">Hello ${escapeHtml(registration.firstName)}, your registration for <strong style="color:#fff;">${title}</strong> has been recorded.</p>
       </div>
       <div style="padding:24px 28px;">
         <p style="margin:0 0 16px;font-size:14px;line-height:1.5;">
-          Thank you for registering through ${college}. Your payment of <strong>₹${escapeHtml(registration.amount)}</strong>
-          via ${escapeHtml(registration.payerUpiApp || 'UPI')} has been recorded.
+          Thank you for registering through ${college}. ${paymentDetails}
         </p>
         <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
           <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:bold;color:#312e81;text-transform:uppercase;margin-bottom:12px;">
@@ -40,16 +51,12 @@ function buildReceiptHtml(registration, config) {
             <tr><td style="color:#64748b;padding:4px 0;">Phone</td><td>${escapeHtml(registration.phone)}</td></tr>
             <tr><td style="color:#64748b;padding:4px 0;">Stream</td><td>${escapeHtml(registration.stream)}</td></tr>
             <tr><td style="color:#64748b;padding:4px 0;">Year / Semester</td><td>${escapeHtml(registration.year)} · ${escapeHtml(registration.semester)}</td></tr>
-            <tr><td style="color:#64748b;padding:4px 0;">UPI UTR</td><td style="font-family:monospace;font-weight:bold;">${escapeHtml(registration.utrNumber)}</td></tr>
-            <tr><td style="color:#64748b;padding:4px 0;">Paid to</td><td>${escapeHtml(registration.upiIdPaidTo)}</td></tr>
+            ${paymentReference ? `<tr><td style="color:#64748b;padding:4px 0;">Payment reference</td><td style="font-family:monospace;font-weight:bold;">${escapeHtml(paymentReference)}</td></tr>` : ''}
+            <tr><td style="color:#64748b;padding:4px 0;">Payment status</td><td>${paymentVerified ? 'Confirmed' : 'Not confirmed'}</td></tr>
             <tr><td style="color:#64748b;padding:4px 0;">Event</td><td>${escapeHtml(config.webinarDate)} · ${escapeHtml(config.webinarTime)}</td></tr>
           </table>
         </div>
-        <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
-          <div style="font-size:14px;font-weight:bold;color:#065f46;margin-bottom:6px;">Next step: join the WhatsApp community</div>
-          <p style="margin:0 0 10px;font-size:13px;color:#047857;">Event updates, slides, and certificates will be shared in this group.</p>
-          <a href="${whatsapp}" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;font-size:13px;font-weight:bold;padding:10px 14px;border-radius:8px;">Join WhatsApp Group</a>
-        </div>
+        ${whatsappSection}
         <p style="margin:0;font-size:12px;color:#64748b;">Please keep this email and your registration number for entry and certificates.</p>
         <p style="margin:8px 0 0;font-size:12px;color:#64748b;">Questions: ${escapeHtml(config.supportEmail)} · ${escapeHtml(config.supportPhone)}</p>
       </div>
@@ -73,10 +80,9 @@ function createTransporter() {
   });
 }
 
-export async function sendReceiptEmail(registration, config) {
+export async function sendRegistrationEmail(registration, config) {
   const transporter = createTransporter();
   const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER;
-  const college = config.collegeName || 'Webinar Registration';
 
   // Generate PDF receipt to attach
   let pdfBuffer;
@@ -100,18 +106,25 @@ export async function sendReceiptEmail(registration, config) {
   const info = await transporter.sendMail({
     from: `"vedhaAI" <${fromAddress}>`,
     to: registration.email,
-    subject: `Registration Confirmed & Payment Receipt: ${config.webinarTitle} (${registration.regNumber})`,
+    subject: `${registration.paymentStatus === 'verified' ? 'Payment Receipt' : 'Registration Successful'}: ${config.webinarTitle} (${registration.regNumber})`,
     html: buildReceiptHtml(registration, config),
     text: [
       `Hello ${registration.firstName},`,
-      `Your registration is confirmed for ${config.webinarTitle}.`,
+      `Your registration was recorded for ${config.webinarTitle}.`,
       `Registration number: ${registration.regNumber}`,
-      `Amount: ₹${registration.amount}`,
-      `UTR: ${registration.utrNumber}`,
-      `WhatsApp: ${config.whatsappGroupLink}`,
+      `Fee: ₹${registration.amount}`,
+      registration.paymentStatus === 'verified'
+        ? `Payment confirmed via ${registration.payerUpiApp || 'UPI'}.`
+        : 'Registration is successful. Payment confirmation is pending from Cashfree.',
+      registration.cashfreeOrderId || registration.utrNumber
+        ? `Payment reference: ${registration.cashfreeOrderId || registration.utrNumber}`
+        : '',
+      registration.paymentStatus === 'verified' && config.whatsappGroupLink
+        ? `WhatsApp: ${config.whatsappGroupLink}`
+        : '',
     ].join('\n'),
     attachments,
   });
-  console.log(`[Email] Receipt sent to ${registration.email} (${info.messageId})${pdfBuffer ? ' with PDF attachment' : ''}`);
+  console.log(`[Email] Registration email sent to ${registration.email} (${info.messageId})${pdfBuffer ? ' with PDF attachment' : ''}`);
   return info;
 }

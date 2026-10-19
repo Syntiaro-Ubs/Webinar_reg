@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { DEFAULT_WEBINAR_CONFIG } from '../../data/defaultConfig';
 import { SuccessReceiptModal } from '../SuccessReceiptModal';
-import { apiUrl, saveBackendConfig, updateBackendStatus, deleteBackendRegistration, resendEmailReceipt, fetchAdminSession, loginAdmin, logoutAdmin } from '../../utils/api';
-import { Settings, Users, Search, Plus, Trash2, CheckCircle, Calendar, Clock, XCircle, Save, RotateCcw, Eye, FileSpreadsheet, QrCode, Building2, BookOpen, MessageCircle, ShieldCheck, Check, Send, BarChart3, X, Copy, Share2, Link2, Timer, ToggleLeft, ToggleRight } from 'lucide-react';
+import { apiUrl, saveBackendConfig, fetchAdminSession, loginAdmin, logoutAdmin } from '../../utils/api';
+import { Settings, Users, Search, Plus, Trash2, CheckCircle, Calendar, Clock, XCircle, Save, RotateCcw, Eye, FileSpreadsheet, Building2, BookOpen, MessageCircle, ShieldCheck, Check, BarChart3, X, Copy, Share2, Link2, Timer, ToggleLeft, ToggleRight } from 'lucide-react';
 export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefreshRegistrations, onAdminLogout }) => {
     const [activeTab, setActiveTab] = useState('submissions');
     // Customizer state
@@ -145,41 +145,6 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             availableStreams: prev.availableStreams.filter((s) => s !== streamToRemove)
         }));
     };
-    // Status updates
-    const handleStatusChange = async (id, status, note) => {
-        try {
-            const result = await updateBackendStatus(id, status, note);
-            await onRefreshRegistrations();
-            if (status === 'verified') {
-                showTempNotice(result.emailSent
-                    ? 'Payment verified. Receipt and WhatsApp group link emailed.'
-                    : 'Payment verified, but receipt email failed. Check SMTP settings and resend.');
-            } else {
-                showTempNotice(`Status marked as ${status.toUpperCase()}`);
-            }
-        } catch (err) {
-            showTempNotice(err.message || 'Could not update the registration status.');
-        }
-    };
-    // Delete registration
-    const handleDelete = async (id, name) => {
-        if (window.confirm(`Permanently delete registration for ${name}?`)) {
-            try {
-                await deleteBackendRegistration(id);
-                await onRefreshRegistrations();
-                showTempNotice(`Registration for ${name} removed.`);
-            } catch (err) {
-                showTempNotice(err.message || 'Could not delete the registration.');
-            }
-        }
-    };
-    // Resend email
-    const handleResendEmail = async (id, email) => {
-        const ok = await resendEmailReceipt(id);
-        showTempNotice(ok
-            ? `Receipt emailed to ${email}`
-            : `Could not email receipt to ${email}. Check SMTP settings.`);
-    };
     // Filter registrations
     const filteredRegistrations = registrations.filter((reg) => {
         const q = searchQuery.toLowerCase().trim();
@@ -189,7 +154,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             reg.lastName.toLowerCase().includes(q) ||
             reg.email.toLowerCase().includes(q) ||
             reg.phone.includes(q) ||
-            reg.utrNumber.toLowerCase().includes(q) ||
+            (reg.cashfreeOrderId || reg.utrNumber || '').toLowerCase().includes(q) ||
             reg.regNumber.toLowerCase().includes(q) ||
             (reg.collegeName && reg.collegeName.toLowerCase().includes(q));
         const matchesStatus = statusFilter === 'all' || reg.paymentStatus === statusFilter;
@@ -227,8 +192,8 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             'Semester',
             'Roll Number',
             'Amount (INR)',
-            'UPI ID Paid To',
-            'UTR Number',
+            'Payment Provider',
+            'Payment Reference',
             'Payment App',
             'Payment Status',
             'Registration Time',
@@ -250,7 +215,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             `"${r.rollNumber || ''}"`,
             r.amount,
             `"${r.upiIdPaidTo}"`,
-            `"${r.utrNumber}"`,
+            `"${r.cashfreeOrderId || r.utrNumber || ''}"`,
             `"${r.payerUpiApp || ''}"`,
             `"${r.paymentStatus}"`,
             `"${r.registeredAt}"`,
@@ -303,7 +268,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
               Webinar &amp; Form Management Center
             </h1>
             <p className="text-xs text-slate-500 mt-0.5 font-normal">
-              Customize form fields, college name at the top, UPI parameters, and review student registrations.
+              Customize webinar details, payment fee, and WhatsApp invite.
             </p>
           </div>
 
@@ -375,7 +340,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
           </div>
 
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
-            <span className="text-[10px] font-mono uppercase font-medium text-slate-400">Pending Review</span>
+            <span className="text-[10px] font-mono uppercase font-medium text-slate-400">Payment Not Confirmed</span>
             <div className="text-xl font-semibold text-amber-700 mt-0.5">{pendingCount} Pending</div>
           </div>
 
@@ -393,7 +358,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
           <div className="bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-2xs flex flex-col gap-3">
             <div className="flex-1 relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none"/>
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by student name, email, phone, UTR or Reg ID..." className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by student name, email, phone, payment reference or Reg ID..." className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -435,7 +400,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                     <th className="py-3 px-4">College</th>
                     <th className="py-3 px-4">Student Details</th>
                     <th className="py-3 px-4">Stream &amp; Year</th>
-                    <th className="py-3 px-4">Payment &amp; UTR</th>
+                    <th className="py-3 px-4">Payment</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
@@ -489,12 +454,12 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                           <div className="flex items-center gap-1.5 font-bold text-slate-900">
                             <span>₹{reg.amount}</span>
                             <span className="text-[10px] text-slate-500 font-normal">
-                              via {reg.payerUpiApp || 'UPI'}
+                              via {reg.payerUpiApp || (reg.cashfreeOrderId ? 'Cashfree' : 'UPI')}
                             </span>
                           </div>
-                          <span className="font-mono text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 block w-fit mt-0.5">
-                            UTR: {reg.utrNumber}
-                          </span>
+                          {(reg.cashfreeOrderId || reg.utrNumber) && <span className="font-mono text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 block w-fit mt-0.5">
+                            Ref: {reg.cashfreeOrderId || reg.utrNumber}
+                          </span>}
                         </td>
 
                         {/* Status */}
@@ -505,7 +470,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                             </span>)}
                           {reg.paymentStatus === 'pending' && (<span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
                               <Clock className="w-3 h-3 text-amber-600"/>
-                              Pending
+                              Payment not confirmed
                             </span>)}
                           {reg.paymentStatus === 'rejected' && (<span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
                               <XCircle className="w-3 h-3 text-red-600"/>
@@ -519,26 +484,6 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                             {/* View Pass / Receipt */}
                             <button type="button" onClick={() => setInspectRegistration(reg)} title="Inspect E-Receipt" className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer">
                               <Eye className="w-3.5 h-3.5"/>
-                            </button>
-
-                            {/* Resend email */}
-                            <button type="button" onClick={() => handleResendEmail(reg.id, reg.email)} title="Resend email receipt" className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-colors cursor-pointer">
-                              <Send className="w-3.5 h-3.5"/>
-                            </button>
-
-                            {/* Verify button */}
-                            {reg.paymentStatus !== 'verified' && (<button type="button" onClick={() => handleStatusChange(reg.id, 'verified', 'Verified by admin')} title="Approve Payment" className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer">
-                                <Check className="w-3.5 h-3.5"/>
-                              </button>)}
-
-                            {/* Reject button */}
-                            {reg.paymentStatus !== 'rejected' && (<button type="button" onClick={() => handleStatusChange(reg.id, 'rejected', 'UTR not found in bank ledger')} title="Reject Payment" className="p-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 hover:bg-red-100 transition-colors cursor-pointer">
-                                <XCircle className="w-3.5 h-3.5"/>
-                              </button>)}
-
-                            {/* Delete button */}
-                            <button type="button" onClick={() => handleDelete(reg.id, [reg.firstName, reg.middleName, reg.lastName].filter(Boolean).join(' '))} title="Delete registration" className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
-                              <Trash2 className="w-3.5 h-3.5"/>
                             </button>
                           </div>
                         </td>
@@ -747,52 +692,31 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             </div>
           </div>
 
-          {/* Section 3: Direct UPI Settings */}
+          {/* Section 3: Payment Settings */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-              <QrCode className="w-5 h-5 text-indigo-600"/>
+              <ShieldCheck className="w-5 h-5 text-indigo-600"/>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Direct UPI Payment Settings (No Payment Gateway)
+                  Payment & Community Settings
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Direct funds to your PhonePe / BHIM merchant terminal with zero commissions.
+                  Cashfree verifies each payment automatically and emails the receipt with the community invite. This dashboard is for viewing registrations and payment status.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  UPI ID (VPA) <span className="text-red-500">*</span>
-                </label>
-                <input type="text" value={formConfig.upiId} onChange={(e) => setFormConfig({ ...formConfig, upiId: e.target.value })} placeholder="Q021076100@ybl" required className="w-full px-3.5 py-2 text-xs font-mono font-bold rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Payee Display Name <span className="text-red-500">*</span>
-                </label>
-                <input type="text" value={formConfig.payeeName} onChange={(e) => setFormConfig({ ...formConfig, payeeName: e.target.value })} placeholder="VedhaAI" required className="w-full px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Terminal Reference Text
-                </label>
-                <input type="text" value={formConfig.upiTerminalText} onChange={(e) => setFormConfig({ ...formConfig, upiTerminalText: e.target.value })} placeholder="Terminal 6-Q021076100" className="w-full px-3.5 py-2 text-xs font-mono rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
                   Registration Pass Fee (INR ₹) <span className="text-red-500">*</span>
                 </label>
-                <input type="number" min="0" value={formConfig.feeAmount} onChange={(e) => setFormConfig({ ...formConfig, feeAmount: Number(e.target.value) })} required className="w-full px-3.5 py-2 text-xs font-black rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
+                <input type="number" min="1" value={formConfig.feeAmount} onChange={(e) => setFormConfig({ ...formConfig, feeAmount: Number(e.target.value) })} required className="w-full px-3.5 py-2 text-xs font-black rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
               </div>
 
               <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1.5">
-                  WhatsApp Community Link (Mandatory Join Target) <span className="text-red-500">*</span>
+                  WhatsApp Community Invite Link <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <MessageCircle className="w-4 h-4 text-emerald-600 absolute left-3 top-2.5 pointer-events-none"/>
@@ -921,7 +845,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
 
             <div className="pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-emerald-700 font-medium">
               <CheckCircle className="w-4 h-4 text-emerald-600"/>
-              <span>Students submit their UPI transaction reference. Verify the payment before sending a receipt.</span>
+              <span>Payments are confirmed automatically by Cashfree. The paid receipt and WhatsApp invite are emailed after successful server verification.</span>
             </div>
           </div>
 
@@ -934,7 +858,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
 
             <button type="submit" disabled={isSaving} className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-75">
               <Save className="w-4 h-4 text-emerald-400"/>
-              <span>{isSaving ? 'Persisting to Backend...' : 'Save Configuration'}</span>
+              <span>{isSaving ? 'Persisting to Backend...' : 'Save'}</span>
             </button>
           </div>
         </form>)}
@@ -965,27 +889,27 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
               </div>
             </div>
 
-            {/* Payment Verification Health */}
+            {/* Enrollment Summary */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
               <h3 className="text-sm font-bold text-slate-900">
-                Payment Verification Health
+                Enrollment Summary
               </h3>
               <div className="p-4 bg-slate-50 rounded-xl space-y-3 border border-slate-100">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">Total Settlement Target:</span>
+                  <span className="text-slate-600">Registration Fees Listed:</span>
                   <span className="font-mono font-bold text-slate-900">₹{totalTarget.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">Verified Revenue:</span>
+                  <span className="text-slate-600">Previously Verified Revenue:</span>
                   <span className="font-mono font-bold text-emerald-700">₹{totalRevenue}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">Pending Review Amount:</span>
+                  <span className="text-slate-600">Unconfirmed Payments:</span>
                   <span className="font-mono font-bold text-amber-700">₹{pendingAmount.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-600">UPI Terminal Address:</span>
-                  <span className="font-mono text-slate-800">{formConfig.upiId}</span>
+                  <span className="text-slate-600">Payment Provider:</span>
+                  <span className="font-mono text-slate-800">Cashfree</span>
                 </div>
               </div>
             </div>

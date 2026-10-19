@@ -1,10 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { QRCodeCard } from '../QRCodeCard';
-import { createBackendRegistration } from '../../utils/api';
+import { createBackendRegistration, getCashfreePaymentStatus } from '../../utils/api';
 import confetti from 'canvas-confetti';
-import { Mail, Calendar as CalendarIcon, AlertCircle, ShieldCheck, Check, ArrowRight, ArrowLeft, Building2, Clock, Lock, Timer } from 'lucide-react';
+import { Mail, Calendar as CalendarIcon, AlertCircle, ShieldCheck, ArrowRight, ArrowLeft, Building2, Clock, Lock } from 'lucide-react';
+
+function loadCashfreeSdk() {
+    if (window.Cashfree) return Promise.resolve(window.Cashfree);
+    return new Promise((resolve, reject) => {
+        let script = document.querySelector('script[data-cashfree-sdk]');
+        if (!script) {
+            script = document.createElement('script');
+            script.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+            script.async = true;
+            script.dataset.cashfreeSdk = 'true';
+            document.head.appendChild(script);
+        }
+        script.addEventListener('load', () => window.Cashfree ? resolve(window.Cashfree) : reject(new Error('Cashfree checkout could not be loaded.')) , { once: true });
+        script.addEventListener('error', () => reject(new Error('Cashfree checkout could not be loaded. Please check your connection.')), { once: true });
+    });
+}
+
 export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
-    // Page step: 1 = Student Details, 2 = Payment via QR & UPI
+    // Page step: 1 = Student Details, 2 = Cashfree checkout
     const [currentPage, setCurrentPage] = useState(1);
     // Page 1: Personal Details
     const [firstName, setFirstName] = useState('');
@@ -19,13 +35,11 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
     const [year, setYear] = useState(config.availableYears[0] || '');
     const [semester, setSemester] = useState(config.availableSemesters[0] || '');
     const [rollNumber, setRollNumber] = useState('');
-    const [utrNumber, setUtrNumber] = useState('');
-    // Selected UPI App
-    const [payerUpiApp, setPayerUpiApp] = useState('PhonePe');
     // Form submission & validation states
     const [errors, setErrors] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [serverError, setServerError] = useState(null);
+    const [checkoutSession, setCheckoutSession] = useState(null);
     useEffect(() => {
         if (!config.availableStreams.includes(stream)) setStream(config.availableStreams[0] || '');
         if (!config.availableYears.includes(year)) setYear(config.availableYears[0] || '');
@@ -73,40 +87,79 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
         }
     };
     const handleBackPage = () => {
+        setCheckoutSession(null);
+        setServerError(null);
         setCurrentPage(1);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    // Submit the registration with the UTR entered by the student.
-    const handleCompletePayment = async (selectedApp) => {
+    // Create a server-priced Cashfree order, then trust only server-side payment verification.
+    const handleCompletePayment = async () => {
         setServerError(null);
-        if (!utrNumber.trim() || utrNumber.trim().length < 6) {
-            setServerError('Enter the UPI transaction reference shown by your payment app.');
-            return;
-        }
         setIsSubmitting(true);
         try {
-            const payload = {
-                firstName: firstName.trim(),
-                middleName: middleName.trim(),
-                lastName: lastName.trim(),
-                email: email.trim().toLowerCase(),
-                phone: phone.trim(),
-                dob,
-                gender,
-                stream,
-                year,
-                semester,
-                rollNumber: rollNumber.trim() || undefined,
-                utrNumber: utrNumber.trim(),
-                payerUpiApp: selectedApp || payerUpiApp || 'UPI'
-            };
-            const createdRecord = await createBackendRegistration(payload);
+            let session = checkoutSession;
+            if (!session) {
+                const payload = {
+                    firstName: firstName.trim(),
+                    middleName: middleName.trim(),
+                    lastName: lastName.trim(),
+                    email: email.trim().toLowerCase(),
+                    phone: phone.trim(),
+                    dob,
+                    gender,
+                    stream,
+                    year,
+                    semester,
+                    rollNumber: rollNumber.trim() || undefined,
+                };
+                session = await createBackendRegistration(payload);
+                setCheckoutSession(session);
+                try {
+                    sessionStorage.setItem(`cashfree-registration:${session.registration.cashfreeOrderId}`, JSON.stringify(session.registration));
+                } catch {
+                    // Checkout can continue if browser storage is unavailable.
+                }
+            }
+
+            const Cashfree = await loadCashfreeSdk();
+            const cashfree = Cashfree({ mode: session.cashfreeMode || 'production' });
+            let checkoutResult;
             try {
-                confetti({
-                    particleCount: 70,
-                    spread: 60,
-                    origin: { y: 0.6 }
+                checkoutResult = await cashfree.checkout({
+                    paymentSessionId: session.paymentSessionId,
+                    redirectTarget: '_modal',
                 });
+            } catch (checkoutError) {
+                checkoutResult = { error: { message: checkoutError.message } };
+            }
+
+            let paymentStatus = null;
+            const statusAttempts = checkoutResult?.error ? 1 : 12;
+            for (let attempt = 0; attempt < statusAttempts; attempt += 1) {
+                try {
+                    paymentStatus = await getCashfreePaymentStatus(session.registration.cashfreeOrderId);
+                    if (paymentStatus.data?.paymentStatus === 'verified') break;
+                } catch (statusError) {
+                    if (attempt === statusAttempts - 1) throw statusError;
+                }
+                if (attempt < statusAttempts - 1) await new Promise((resolve) => window.setTimeout(resolve, 2000));
+            }
+
+            if (checkoutResult?.error && paymentStatus?.data?.paymentStatus !== 'verified') {
+                setServerError(checkoutResult.error.message || 'Payment was not confirmed. You can try checkout again.');
+                setIsSubmitting(false);
+                return;
+            }
+
+            const createdRecord = {
+                ...session.registration,
+                paymentStatus: paymentStatus?.data?.paymentStatus || 'pending',
+                paymentReceiptSent: Boolean(paymentStatus?.data?.paymentReceiptSent),
+            };
+            try {
+                if (createdRecord.paymentStatus === 'verified') {
+                    confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+                }
             }
             catch (e) {
                 // Safe fallback
@@ -116,7 +169,7 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
         }
         catch (err) {
             setIsSubmitting(false);
-            setServerError(err.message || 'Failed to record registration. Please try again.');
+            setServerError(err.message || 'Could not start payment. Please try again.');
         }
     };
     // Check registration time window
@@ -402,36 +455,38 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
         </div>)}
 
       {/* ======================================================== */}
-      {/* PAGE 2: QR CODE & SUBMIT                                 */}
+      {/* PAGE 2: CASHFREE CHECKOUT                                */}
       {/* ======================================================== */}
-      {currentPage === 2 && (<div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm flex flex-col items-center max-w-lg mx-auto">
-          {/* Centered QR Standee */}
-          <div className="w-full flex flex-col items-center">
-            <QRCodeCard upiId={config.upiId} payeeName={config.payeeName} terminalText={config.upiTerminalText} amount={config.feeAmount} webinarTitle={config.webinarTitle} onUpiAppClick={(app) => setPayerUpiApp(app)} showAppButtons={true}/>
+      {currentPage === 2 && (<div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm max-w-lg mx-auto">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mb-3">
+              <ShieldCheck className="w-6 h-6 text-indigo-600"/>
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Secure payment</h2>
+            <p className="text-sm text-slate-500 mt-1">Complete your registration fee using Cashfree checkout.</p>
+            <div className="w-full mt-5 p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-sm text-slate-600">Registration fee</span>
+              <strong className="text-xl text-slate-950">₹{Number(config.feeAmount).toFixed(2)}</strong>
+            </div>
+            <p className="text-xs leading-5 text-slate-500 mt-4">
+              Your receipt and WhatsApp community invite will be emailed after Cashfree confirms the payment.
+            </p>
           </div>
 
-          <div className="w-full max-w-[310px] mt-4 space-y-3">
-            <label className="block text-xs font-medium text-slate-700">
-              UPI transaction reference (UTR) <span className="text-red-500">*</span>
-              <input value={utrNumber} onChange={(e) => setUtrNumber(e.target.value)} maxLength={64} required placeholder="Enter the reference from your payment app" className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600" />
-            </label>
-          </div>
+          {serverError && <div role="alert" className="w-full mt-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{serverError}</div>}
 
-          {serverError && <div className="w-full max-w-[310px] mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2.5">{serverError}</div>}
-
-          {/* Action: Back & Submit */}
-          <div className="w-full max-w-[310px] pt-4 mt-2 border-t border-slate-100 flex items-center gap-2">
-            <button type="button" onClick={handleBackPage} className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-medium transition-colors flex items-center justify-center gap-1 cursor-pointer">
+          <div className="w-full pt-4 mt-4 border-t border-slate-100 flex items-center gap-2">
+            <button type="button" onClick={handleBackPage} disabled={isSubmitting} className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 text-xs font-medium transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50">
               <ArrowLeft className="w-3.5 h-3.5"/>
               <span>Back</span>
             </button>
 
-            <button type="button" onClick={() => handleCompletePayment()} disabled={isSubmitting} className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-75">
+            <button type="button" onClick={handleCompletePayment} disabled={isSubmitting} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-75">
               {isSubmitting ? (<>
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                  <span>Submitting...</span>
+                  <span>Opening checkout...</span>
                 </>) : (<>
-                  <span>Submit</span>
+                  <span>{checkoutSession ? 'Resume payment' : 'Pay securely'}</span>
                   <ArrowRight className="w-4 h-4"/>
                 </>)}
             </button>

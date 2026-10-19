@@ -17,12 +17,14 @@ import {
     saveConfig,
     loadRegistrations,
     insertRegistration,
-    updateRegistrationStatus,
-    deleteRegistration,
     findRegistrationById,
-    setRegistrationEmailSent,
+    findRegistrationByCashfreeOrderId,
+    updateRegistrationPaymentStatus,
+    claimPaymentReceipt,
+    markPaymentReceiptSent,
+    releasePaymentReceiptClaim,
 } from './backend/db.js';
-import { sendReceiptEmail } from './backend/email.js';
+import { sendRegistrationEmail } from './backend/email.js';
 import { generateReceiptPdf } from './backend/receipt-pdf.js';
 
 // Initial default configuration
@@ -35,7 +37,7 @@ const DEFAULT_CONFIG = {
     webinarDate: '',
     webinarTime: '',
     feeAmount: 0,
-    upiId: '',
+    upiId: 'Q021076100@ybl',
     payeeName: '',
     upiTerminalText: '',
     whatsappGroupLink: '',
@@ -68,6 +70,46 @@ const INITIAL_REGISTRATIONS = [];
 const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const adminSessions = new Map();
 const adminLoginAttempts = new Map();
+const CASHFREE_API_VERSION = '2025-01-01';
+
+function getCashfreeSettings() {
+    const configuredEnvironment = (process.env.CASHFREE_ENV || process.env.CASHFREE_ENVIRONMENT || 'production').trim().toLowerCase();
+    const environment = configuredEnvironment === 'test' ? 'sandbox' : configuredEnvironment;
+    if (!['production', 'sandbox'].includes(environment)) {
+        throw new Error('Set CASHFREE_ENV to sandbox (or test) or production.');
+    }
+    const appId = process.env.CASHFREE_APP_ID;
+    const secretKey = process.env.CASHFREE_SECRET_KEY;
+    if (!appId || !secretKey) {
+        throw new Error('Cashfree is not configured. Set CASHFREE_APP_ID and CASHFREE_SECRET_KEY on the server.');
+    }
+    return {
+        environment,
+        secretKey,
+        apiBase: environment === 'sandbox' ? 'https://sandbox.cashfree.com/pg' : 'https://api.cashfree.com/pg',
+    };
+}
+
+async function requestCashfree(pathname, options = {}) {
+    const settings = getCashfreeSettings();
+    const response = await fetch(`${settings.apiBase}${pathname}`, {
+        ...options,
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'x-api-version': CASHFREE_API_VERSION,
+            'x-client-id': process.env.CASHFREE_APP_ID,
+            'x-client-secret': settings.secretKey,
+            ...options.headers,
+        },
+    });
+    const responseBody = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = responseBody.message || responseBody.type || `HTTP ${response.status}`;
+        throw new Error(`Cashfree API request failed: ${detail}`);
+    }
+    return responseBody;
+}
 
 function getCookie(req, name) {
     const cookies = req.headers.cookie || '';
@@ -160,7 +202,14 @@ async function startServer() {
             lanUrls,
         };
     }
-    app.use(express.json({ limit: '1mb' }));
+    app.use(express.json({
+        limit: '1mb',
+        verify: (req, res, buffer) => {
+            if (req.originalUrl.split('?')[0] === '/api/webhooks/cashfree') {
+                req.rawBody = buffer.toString('utf8');
+            }
+        },
+    }));
     // ================= API ROUTES =================
     app.get('/health', (req, res) => {
         res.status(200).json({ status: 'ok' });
@@ -273,21 +322,104 @@ async function startServer() {
             res.status(500).json({ success: false, error: err.message });
         }
     });
-    app.get('/api/registrations/:id/status', async (req, res) => {
-        try {
-            const registration = await findRegistrationById(req.params.id);
-            if (!registration) {
-                return res.status(404).json({ success: false, error: 'Registration record not found' });
+    const confirmCashfreePayment = async (orderId) => {
+        const registration = await findRegistrationByCashfreeOrderId(orderId);
+        if (!registration) throw Object.assign(new Error('Cashfree order is not linked to a registration.'), { status: 404 });
+
+        const payments = await requestCashfree(`/orders/${encodeURIComponent(orderId)}/payments`, { method: 'GET' });
+        const successfulPayment = Array.isArray(payments)
+            ? payments.find((payment) => payment.payment_status === 'SUCCESS')
+            : null;
+        if (!successfulPayment) return { verified: false, registration };
+
+        const paidCents = Math.round(Number(successfulPayment.payment_amount) * 100);
+        const expectedCents = Math.round(Number(registration.amount) * 100);
+        if (successfulPayment.payment_currency !== 'INR' || paidCents !== expectedCents) {
+            throw new Error('Cashfree payment amount or currency does not match this registration.');
+        }
+
+        await updateRegistrationPaymentStatus(registration.id, 'verified');
+        registration.paymentStatus = 'verified';
+        registration.payerUpiApp = 'Cashfree';
+
+        let receiptError = '';
+        if (!registration.paymentReceiptSent) {
+            const claimed = await claimPaymentReceipt(registration.id);
+            if (claimed) {
+                try {
+                    const config = await loadConfig();
+                    await sendRegistrationEmail(registration, config);
+                    await markPaymentReceiptSent(registration.id);
+                    registration.paymentReceiptSent = true;
+                }
+                catch (emailError) {
+                    await releasePaymentReceiptClaim(registration.id);
+                    console.error(`[Email] Cashfree payment receipt failed for ${registration.email}:`, emailError.message);
+                    receiptError = 'Payment was confirmed, but the receipt email could not be sent yet.';
+                }
             }
-            res.json({ success: true, data: { status: registration.paymentStatus, emailSent: registration.emailSent } });
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
+        }
+        return { verified: true, registration, receiptError };
+    };
+
+    // Cashfree calls this signed endpoint after payment events. Browser redirects are verified separately below.
+    app.post('/api/webhooks/cashfree', async (req, res) => {
+        try {
+            const settings = getCashfreeSettings();
+            const signature = req.get('x-webhook-signature') || '';
+            const timestamp = req.get('x-webhook-timestamp') || '';
+            const rawBody = req.rawBody;
+            if (!signature || !timestamp || !rawBody) {
+                return res.status(400).json({ success: false, error: 'Missing Cashfree webhook signature data.' });
+            }
+            const expected = crypto.createHmac('sha256', settings.secretKey).update(timestamp + rawBody).digest('base64');
+            const expectedBuffer = Buffer.from(expected);
+            const receivedBuffer = Buffer.from(signature);
+            if (expectedBuffer.length !== receivedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
+                return res.status(401).json({ success: false, error: 'Invalid Cashfree webhook signature.' });
+            }
+
+            const event = req.body;
+            if (event?.type === 'PAYMENT_SUCCESS_WEBHOOK' && event?.data?.payment?.payment_status === 'SUCCESS') {
+                const orderId = event?.data?.order?.order_id;
+                if (!orderId) return res.status(400).json({ success: false, error: 'Webhook has no order id.' });
+                const result = await confirmCashfreePayment(orderId);
+                if (result.receiptError) {
+                    return res.status(500).json({ success: false, error: 'Payment is confirmed, but the receipt email is pending.' });
+                }
+            }
+            return res.status(200).json({ success: true });
+        }
+        catch (err) {
+            console.error('[Cashfree] Webhook processing failed:', err.message);
+            return res.status(err.status || 500).json({ success: false, error: 'Cashfree payment event could not be processed.' });
         }
     });
-    // 4. POST /api/registrations (Student registers)
+
+    // Called when the student returns from checkout. Payment is confirmed with Cashfree's API.
+    app.get('/api/payments/cashfree/:orderId/status', async (req, res) => {
+        try {
+            const result = await confirmCashfreePayment(req.params.orderId);
+            res.set('Cache-Control', 'no-store');
+            res.json({
+                success: true,
+                data: {
+                    paymentStatus: result.verified ? 'verified' : 'pending',
+                    paymentReceiptSent: result.registration.paymentReceiptSent,
+                    regNumber: result.registration.regNumber,
+                },
+            });
+        }
+        catch (err) {
+            console.error('[Cashfree] Status verification failed:', err.message);
+            res.status(err.status || 502).json({ success: false, error: err.message });
+        }
+    });
+
+    // Create a Cashfree order for a new student registration.
     app.post('/api/registrations', async (req, res) => {
         try {
-            const { firstName, middleName, lastName, email, phone, dob, gender, stream, year, semester, rollNumber, utrNumber, payerUpiApp } = req.body;
+            const { firstName, middleName, lastName, email, phone, dob, gender, stream, year, semester, rollNumber } = req.body;
             // Check registration time window
             const configCheck = await loadConfig();
             const now = new Date();
@@ -318,14 +450,91 @@ async function startServer() {
             if (!configCheck.availableYears?.includes(year) || !configCheck.availableSemesters?.includes(semester)) {
                 return res.status(400).json({ success: false, error: 'Select a valid academic year and semester from the current options' });
             }
-            if (typeof utrNumber !== 'string' || utrNumber.trim().length < 6 || utrNumber.trim().length > 64) {
-                return res.status(400).json({ success: false, error: 'Enter a UPI transaction reference between 6 and 64 characters' });
-            }
             const config = configCheck;
+            const amount = Math.round(Number(config.feeAmount) * 100) / 100;
+            if (!Number.isFinite(amount) || amount < 1) {
+                return res.status(400).json({ success: false, error: 'The registration fee must be at least ₹1 to accept Cashfree payments.' });
+            }
+            const settings = getCashfreeSettings();
+            let publicOrigin = process.env.APP_URL?.trim().replace(/\/+$/, '') || '';
+            let parsedOrigin;
+            if (publicOrigin) {
+                try {
+                    parsedOrigin = new URL(publicOrigin);
+                }
+                catch {
+                    return res.status(503).json({ success: false, error: 'Set APP_URL to a valid absolute URL. For local testing, use CASHFREE_ENV=sandbox.' });
+                }
+            }
+            if (!publicOrigin) {
+                if (settings.environment === 'production') {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Production checkout requires APP_URL to be a public HTTPS URL. For local testing, change CASHFREE_ENV to sandbox and use sandbox credentials.',
+                    });
+                }
+                publicOrigin = req.get('origin') || `http://localhost:${FRONTEND_PORT}`;
+                try {
+                    parsedOrigin = new URL(publicOrigin);
+                }
+                catch {
+                    return res.status(503).json({ success: false, error: 'The checkout return URL is invalid.' });
+                }
+            }
+            const hostname = parsedOrigin.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+            const ipv4 = hostname.split('.').map(Number);
+            const hasIpv4Address = ipv4.length === 4 && ipv4.every((part) => Number.isInteger(part) && part >= 0 && part <= 255);
+            const isPrivateIpv4 = hasIpv4Address && (
+                ipv4[0] === 0 || ipv4[0] === 10 || ipv4[0] === 127
+                || (ipv4[0] === 169 && ipv4[1] === 254)
+                || (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31)
+                || (ipv4[0] === 192 && ipv4[1] === 168)
+            );
+            const isLocalHost = hostname === 'localhost' || hostname.endsWith('.localhost')
+                || hostname === '::1' || hostname === '0.0.0.0'
+                || (hostname.includes(':') && (/^(fc|fd)/.test(hostname) || hostname.startsWith('fe80:')))
+                || isPrivateIpv4;
+            const isProductionUrlInvalid = settings.environment === 'production'
+                && (parsedOrigin.protocol !== 'https:' || isLocalHost);
+            if (!['https:', 'http:'].includes(parsedOrigin.protocol)) {
+                return res.status(503).json({ success: false, error: 'APP_URL must use http or https.' });
+            }
+            if (isProductionUrlInvalid) {
+                return res.status(503).json({
+                    success: false,
+                    error: 'Production checkout requires APP_URL to be a public HTTPS URL. For local HTTP testing, change CASHFREE_ENV to sandbox and use sandbox credentials.',
+                });
+            }
+            publicOrigin = parsedOrigin.origin;
             const timestamp = new Date().toISOString();
             const regNumber = `REG-${new Date().getFullYear()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+            const id = crypto.randomUUID();
+            const cashfreeOrderId = `CF_${crypto.randomBytes(12).toString('hex')}`;
+            const customerPhone = phone.replace(/\D/g, '').slice(-10);
+            const cashfreeOrder = await requestCashfree('/orders', {
+                method: 'POST',
+                body: JSON.stringify({
+                    order_id: cashfreeOrderId,
+                    order_amount: amount,
+                    order_currency: 'INR',
+                    customer_details: {
+                        customer_id: id,
+                        customer_name: [firstName.trim(), middleName?.trim(), lastName.trim()].filter(Boolean).join(' ').slice(0, 100),
+                        customer_email: email.trim().toLowerCase(),
+                        customer_phone: customerPhone,
+                    },
+                    order_meta: {
+                        return_url: `${publicOrigin}/register?order_id={order_id}`,
+                        notify_url: `${publicOrigin}/api/webhooks/cashfree`,
+                    },
+                    order_note: `Registration for ${(config.webinarTitle || 'webinar').slice(0, 100)}`,
+                }),
+            });
+            if (!cashfreeOrder.payment_session_id) {
+                throw new Error('Cashfree did not return a payment session.');
+            }
             const newRegistration = {
-                id: crypto.randomUUID(),
+                id,
                 regNumber,
                 collegeName: config.collegeName || '',
                 firstName: firstName.trim(),
@@ -339,95 +548,42 @@ async function startServer() {
                 year,
                 semester,
                 rollNumber: typeof rollNumber === 'string' && rollNumber.trim() ? rollNumber.trim() : undefined,
-                amount: Number(config.feeAmount) || 0,
+                amount,
                 upiIdPaidTo: config.upiId || '',
-                utrNumber: String(utrNumber).trim(),
-                payerUpiApp: payerUpiApp || 'UPI',
+                utrNumber: '',
+                cashfreeOrderId,
+                payerUpiApp: 'Cashfree',
                 paymentStatus: 'pending',
                 registeredAt: timestamp,
                 emailSent: false,
-                notes: 'Payment submitted; awaiting administrator verification.'
+                paymentReceiptSent: false,
+                notes: 'Awaiting Cashfree payment confirmation.'
             };
             await insertRegistration(newRegistration);
             res.status(201).json({
                 success: true,
-                data: newRegistration,
-                message: 'Registration recorded. Payment is awaiting administrator verification.'
+                data: {
+                    registration: newRegistration,
+                    paymentSessionId: cashfreeOrder.payment_session_id,
+                    cashfreeMode: settings.environment,
+                },
+                message: 'Registration created. Complete payment in Cashfree checkout to confirm your seat.'
             });
         }
         catch (err) {
-            res.status(500).json({ success: false, error: err.message });
+            console.error('[Cashfree] Could not create checkout order:', err.message);
+            const isConfigurationError = /not configured|CASHFREE_ENV(?:IRONMENT)?/i.test(err.message);
+            const isDevelopment = process.env.NODE_ENV !== 'production';
+            res.status(isConfigurationError ? 503 : 502).json({
+                success: false,
+                error: isConfigurationError || isDevelopment
+                    ? err.message
+                    : 'Could not start Cashfree checkout. Please try again or contact support.',
+            });
         }
     });
-    // 5. PATCH /api/registrations/:id/status
-    app.patch('/api/registrations/:id/status', requireAdmin, async (req, res) => {
-        try {
-            const { id } = req.params;
-            const { status, notes } = req.body;
-            if (!['pending', 'verified', 'rejected'].includes(status)) {
-                return res.status(400).json({ success: false, error: 'Status must be pending, verified, or rejected' });
-            }
-            const registration = await findRegistrationById(id);
-            if (!registration) {
-                return res.status(404).json({ success: false, error: 'Registration record not found' });
-            }
-            const found = await updateRegistrationStatus(id, status, notes);
-            if (!found) {
-                return res.status(404).json({ success: false, error: 'Registration record not found' });
-            }
-            let emailSent = registration.emailSent;
-            let emailError = '';
-            if (status === 'verified' && !emailSent) {
-                try {
-                    const updatedRegistration = { ...registration, paymentStatus: 'verified' };
-                    const config = await loadConfig();
-                    await sendReceiptEmail(updatedRegistration, config);
-                    await setRegistrationEmailSent(id, true);
-                    emailSent = true;
-                } catch (err) {
-                    emailError = err.message;
-                    console.error(`[Email] Receipt email failed for ${registration.email}:`, err.message);
-                }
-            }
-            res.json({ success: true, data: { status, emailSent, emailError }, message: 'Status updated' });
-        }
-        catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-    // 6. DELETE /api/registrations/:id
-    app.delete('/api/registrations/:id', requireAdmin, async (req, res) => {
-        try {
-            const { id } = req.params;
-            await deleteRegistration(id);
-            res.json({ success: true, message: 'Registration deleted successfully' });
-        }
-        catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-    // 7. POST /api/registrations/:id/resend-email
-    app.post('/api/registrations/:id/resend-email', requireAdmin, async (req, res) => {
-        try {
-            const { id } = req.params;
-            const student = await findRegistrationById(id);
-            if (!student) {
-                return res.status(404).json({ success: false, error: 'Student not found' });
-            }
-            if (student.paymentStatus !== 'verified') {
-                return res.status(409).json({ success: false, error: 'Verify the payment before sending a payment receipt' });
-            }
-            const config = await loadConfig();
-            await sendReceiptEmail(student, config);
-            await setRegistrationEmailSent(student.id, true);
-            res.json({ success: true, message: `Receipt emailed to ${student.email}` });
-        }
-        catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-    // 8a. GET /api/registrations/:id/receipt — Download PDF receipt
-    app.get('/api/registrations/:id/receipt', requireAdmin, async (req, res) => {
+    // 5. GET /api/registrations/:id/receipt — Download PDF receipt
+    app.get('/api/registrations/:id/receipt', async (req, res) => {
         try {
             const { id } = req.params;
             const student = await findRegistrationById(id);
@@ -447,7 +603,7 @@ async function startServer() {
             res.status(500).json({ success: false, error: err.message });
         }
     });
-    // 8. GET /api/stats
+    // 6. GET /api/stats
     app.get('/api/stats', requireAdmin, async (req, res) => {
         try {
             const regs = await loadRegistrations();

@@ -7,7 +7,7 @@ export const DEFAULT_WEBINAR_CONFIG = {
     webinarDate: '',
     webinarTime: '',
     feeAmount: 0,
-    upiId: '',
+    upiId: 'Q021076100@ybl',
     payeeName: '',
     upiTerminalText: '',
     whatsappGroupLink: '',

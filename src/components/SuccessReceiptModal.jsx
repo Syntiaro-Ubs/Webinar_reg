@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { EmailPreviewModal } from './EmailPreviewModal';
 import { downloadReceiptPdf } from '../utils/api';
 import QRCode from 'qrcode';
 import {
@@ -12,14 +11,14 @@ import {
 ───────────────────────────────────────────── */
 function CompactReceiptModal({ registration, config, onClose }) {
   const receiptQrRef = useRef(null);
-  const [showEmailModal, setShowEmailModal] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const fullName = [registration.firstName, registration.middleName, registration.lastName]
     .filter(Boolean).join(' ');
 
   useEffect(() => {
     if (receiptQrRef.current) {
-      const payload = `ID:${registration.regNumber}|UTR:${registration.utrNumber}|NAME:${fullName}|AMT:${registration.amount}`;
+      const paymentReference = registration.cashfreeOrderId || registration.utrNumber;
+      const payload = `ID:${registration.regNumber}${paymentReference ? `|REF:${paymentReference}` : ''}|NAME:${fullName}|AMT:${registration.amount}`;
       QRCode.toCanvas(receiptQrRef.current, payload, {
         width: 72, margin: 1,
         color: { dark: '#0f172a', light: '#ffffff' }
@@ -37,9 +36,9 @@ function CompactReceiptModal({ registration, config, onClose }) {
             <div>
               <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-semibold uppercase tracking-wider mb-0.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Official Receipt</span>
+                <span>{registration.paymentStatus === 'verified' ? 'Official Receipt' : 'Registration Status'}</span>
               </div>
-              <h2 className="text-base font-semibold text-white">{registration.paymentStatus === 'verified' ? 'Registration Confirmed' : registration.paymentStatus === 'rejected' ? 'Payment Not Verified' : 'Registration Received'}</h2>
+              <h2 className="text-base font-semibold text-white">{registration.paymentStatus === 'verified' ? 'Registration Confirmed' : registration.paymentStatus === 'rejected' ? 'Payment Not Verified' : 'Payment Processing'}</h2>
             </div>
             <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-3 shrink-0 cursor-pointer">
               <X className="w-4 h-4" />
@@ -48,12 +47,12 @@ function CompactReceiptModal({ registration, config, onClose }) {
 
           <div className={`px-5 py-2.5 text-xs ${registration.paymentStatus === 'verified' ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-100' : registration.paymentStatus === 'rejected' ? 'bg-red-50 text-red-800 border-b border-red-100' : 'bg-amber-50 text-amber-800 border-b border-amber-100'}`}>
             {registration.paymentStatus === 'verified'
-              ? registration.emailSent
+              ? registration.paymentReceiptSent
                 ? 'Payment successful. Your receipt and WhatsApp community link have been emailed.'
                 : 'Payment successful. The receipt email could not be confirmed; please contact the organizer.'
               : registration.paymentStatus === 'rejected'
-                ? 'We could not verify this payment. Please contact the organizer with your UTR.'
-                : 'Payment submitted. This page will update after the organizer verifies your UTR.'}
+                ? 'We could not verify this payment. Please contact the organizer.'
+                : 'We are waiting for Cashfree to confirm your payment. The paid receipt and community invite will be emailed after confirmation.'}
           </div>
 
           {/* Receipt Body */}
@@ -99,7 +98,7 @@ function CompactReceiptModal({ registration, config, onClose }) {
                 </div>
               </div>
               <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded shrink-0 ${registration.paymentStatus === 'verified' ? 'text-emerald-800 bg-emerald-50 border border-emerald-300' : registration.paymentStatus === 'rejected' ? 'text-red-800 bg-red-50 border border-red-300' : 'text-amber-800 bg-amber-50 border border-amber-300'}`}>
-                <ShieldCheck className="w-3 h-3"/>{registration.paymentStatus === 'verified' ? 'PAID' : registration.paymentStatus === 'rejected' ? 'REJECTED' : 'PENDING'}
+                <ShieldCheck className="w-3 h-3"/>{registration.paymentStatus === 'verified' ? 'PAID' : registration.paymentStatus === 'rejected' ? 'REJECTED' : 'REGISTERED'}
               </span>
             </div>
 
@@ -140,7 +139,7 @@ function CompactReceiptModal({ registration, config, onClose }) {
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 text-left font-semibold text-[10px]">
                       <th className="py-1.5 px-2.5 border-r border-slate-200">Description</th>
-                      <th className="py-1.5 px-2.5 border-r border-slate-200">Mode & UTR</th>
+                      <th className="py-1.5 px-2.5 border-r border-slate-200">Payment Mode</th>
                       <th className="py-1.5 px-2.5 text-right w-24">Amount (INR)</th>
                     </tr>
                   </thead>
@@ -150,20 +149,20 @@ function CompactReceiptModal({ registration, config, onClose }) {
                         <span className="font-semibold text-slate-900 block">Webinar Registration & E-Certificate</span>
                       </td>
                       <td className="py-1.5 px-2.5 border-r border-slate-200">
-                        <span className="block">UPI ({registration.payerUpiApp || 'Online'})</span>
-                        <span className="font-mono text-[10px] text-slate-500">UTR: {registration.utrNumber}</span>
+                        <span className="block">{registration.payerUpiApp || 'UPI'}</span>
+                        {(registration.cashfreeOrderId || registration.utrNumber) && <span className="font-mono text-[10px] text-slate-500">Ref: {registration.cashfreeOrderId || registration.utrNumber}</span>}
                       </td>
                       <td className="py-1.5 px-2.5 text-right font-mono font-medium text-slate-900">₹{Number(registration.amount).toFixed(2)}</td>
                     </tr>
                     <tr className="bg-slate-50 font-semibold">
-                      <td colSpan="2" className="py-1.5 px-2.5 text-right border-r border-slate-200 text-slate-700">{registration.paymentStatus === 'verified' ? 'Total Paid:' : 'Amount Submitted:'}</td>
+                      <td colSpan="2" className="py-1.5 px-2.5 text-right border-r border-slate-200 text-slate-700">{registration.paymentStatus === 'verified' ? 'Total Paid:' : 'Amount:'}</td>
                       <td className="py-1.5 px-2.5 text-right font-bold text-slate-950 font-mono">₹{Number(registration.amount).toFixed(2)}</td>
                     </tr>
                   </tbody>
                 </table>
                 <div className="bg-slate-50/90 px-2.5 py-1 text-[10px] text-slate-700 border-t border-slate-200 flex items-center justify-between">
                   <span><strong>Amount:</strong> ₹{Number(registration.amount).toLocaleString('en-IN')}</span>
-                  <span className="text-emerald-700 font-semibold">{registration.paymentStatus === 'verified' ? 'Confirmed & Settled' : registration.paymentStatus === 'rejected' ? 'Payment Not Verified' : 'Awaiting Verification'}</span>
+                  <span className="text-emerald-700 font-semibold">{registration.paymentStatus === 'verified' ? 'Confirmed & Settled' : registration.paymentStatus === 'rejected' ? 'Payment Not Verified' : 'Payment Not Confirmed'}</span>
                 </div>
               </div>
             </div>
@@ -176,7 +175,7 @@ function CompactReceiptModal({ registration, config, onClose }) {
               <div className="text-[10px] text-slate-600 flex-1">
                 <span className="font-bold text-slate-900 block uppercase font-mono text-[9px]">Digital Security QR</span>
                 <span className="text-[9px] text-slate-500 block leading-tight mt-0.5">Scan to verify delegate credentials.</span>
-                <span className="font-mono text-[9px] text-slate-500 block mt-0.5">UTR: <strong className="text-slate-800">{registration.utrNumber}</strong></span>
+                {(registration.cashfreeOrderId || registration.utrNumber) && <span className="font-mono text-[9px] text-slate-500 block mt-0.5">Ref: <strong className="text-slate-800">{registration.cashfreeOrderId || registration.utrNumber}</strong></span>}
               </div>
               <div className="shrink-0 border border-indigo-200 bg-indigo-50/50 rounded-lg px-2 py-1.5 text-center">
                 <div className="text-[8px] font-mono uppercase tracking-wider text-indigo-700 font-bold">Certified by</div>
@@ -222,10 +221,6 @@ function CompactReceiptModal({ registration, config, onClose }) {
                   </>
                 )}
               </button>
-              <button onClick={() => setShowEmailModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-medium transition-colors cursor-pointer">
-                <Mail className="w-3.5 h-3.5"/>
-                <span>Email</span>
-              </button>
               <button onClick={onClose} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs font-medium transition-colors cursor-pointer">
                 <span>Close</span>
               </button>
@@ -234,7 +229,6 @@ function CompactReceiptModal({ registration, config, onClose }) {
         </div>
       </div>
 
-      <EmailPreviewModal isOpen={showEmailModal} onClose={() => setShowEmailModal(false)} registration={registration} config={config}/>
     </>
   );
 }
@@ -251,19 +245,40 @@ export const SuccessReceiptModal = ({ registration, config, isOpen, onClose, onN
     <>
       {/* Full-screen overlay */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
-        <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="relative bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close payment confirmation"
+            className="absolute top-3 right-3 z-10 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
 
           {/* Success content */}
           <div className="flex flex-col items-center text-center px-6 py-8 sm:px-8 sm:py-10">
 
             {/* Green checkmark circle */}
-            <div className="w-20 h-20 rounded-full bg-emerald-50 border-4 border-emerald-400 flex items-center justify-center mb-5 shadow-lg">
-              <Check className="w-10 h-10 text-emerald-500" strokeWidth={3}/>
+              <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center mb-5 shadow-lg ${registration.paymentStatus === 'verified' ? 'bg-emerald-50 border-emerald-400' : 'bg-amber-50 border-amber-300'}`}>
+                {registration.paymentStatus === 'verified'
+                  ? <Check className="w-10 h-10 text-emerald-500" strokeWidth={3}/>
+                  : <Clock className="w-9 h-9 text-amber-500"/>}
             </div>
 
-            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Payment Successful!</h2>
+            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+              {registration.paymentStatus === 'verified'
+                ? 'Payment Successful!'
+                : registration.paymentStatus === 'rejected'
+                  ? 'Payment Not Verified'
+                  : 'Payment Processing'}
+            </h2>
             <p className="text-sm text-slate-600 mt-1.5 max-w-xs">
-              Hey <strong>{registration.firstName}</strong>, {registration.paymentStatus === 'verified' ? <>your seat for <strong>{config.webinarTitle}</strong> is confirmed.</> : <>we received your registration for <strong>{config.webinarTitle}</strong>. Payment is pending verification.</>}
+              Hey <strong>{registration.firstName}</strong>, {registration.paymentStatus === 'verified'
+                ? <>your seat for <strong>{config.webinarTitle}</strong> is confirmed.</>
+                : registration.paymentStatus === 'rejected'
+                  ? <>we could not verify your payment. Please contact support.</>
+                  : <>your payment for <strong>{config.webinarTitle}</strong> is still being confirmed by Cashfree. Your receipt and community invite will be emailed after confirmation.</>}
             </p>
 
             {/* Reg number badge */}
@@ -276,32 +291,37 @@ export const SuccessReceiptModal = ({ registration, config, isOpen, onClose, onN
             {/* Email notice */}
             <p className="mt-3 text-[11px] text-slate-400 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-indigo-400"/>
-              Receipt emailed to <span className="font-mono text-slate-600">{registration.email}</span>
+              {(registration.paymentStatus === 'verified' ? registration.paymentReceiptSent : registration.emailSent)
+                ? <>{registration.paymentStatus === 'verified' ? 'Payment receipt' : 'Registration confirmation'} emailed to <span className="font-mono text-slate-600">{registration.email}</span></>
+                : registration.paymentStatus === 'verified'
+                  ? <>Payment verified. Receipt email is pending; it will be retried automatically.</>
+                  : <>Cashfree is still confirming payment. Please keep this registration number.</>}
             </p>
 
             {/* ── Action Buttons ── */}
             <div className="mt-7 w-full flex flex-col gap-2.5">
 
-              {/* View Receipt */}
-              <button
+              {registration.paymentStatus === 'verified' && <button
                 onClick={() => setShowReceipt(true)}
                 className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
               >
                 <FileText className="w-4 h-4"/>
                 <span>View Receipt</span>
-              </button>
+              </button>}
 
-              {/* Join Community */}
-              <a
-                href={config.whatsappGroupLink}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#25D366] hover:bg-[#20ba59] text-white rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
-              >
-                <MessageCircle className="w-4 h-4"/>
-                <span>Join WhatsApp Community</span>
-                <ExternalLink className="w-3.5 h-3.5 opacity-75"/>
-              </a>
+              {/* Show the community invite only after Cashfree confirms payment. */}
+              {registration.paymentStatus === 'verified' && config.whatsappGroupLink && (
+                <a
+                  href={config.whatsappGroupLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#25D366] hover:bg-[#20ba59] text-white rounded-xl text-sm font-semibold shadow-md transition-all cursor-pointer"
+                >
+                  <MessageCircle className="w-4 h-4"/>
+                  <span>Join WhatsApp Community</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-75"/>
+                </a>
+              )}
             </div>
 
             {/* Register another */}

@@ -59,10 +59,12 @@ function rowToRegistration(row) {
     amount: Number(row.amount) || 0,
     upiIdPaidTo: row.upi_id_paid_to || "",
     utrNumber: row.utr_number || "",
+    cashfreeOrderId: row.cashfree_order_id || '',
     payerUpiApp: row.payer_upi_app || "",
     paymentStatus: row.payment_status,
     registeredAt: row.registered_at,
     emailSent: Boolean(row.email_sent),
+    paymentReceiptSent: Number(row.payment_receipt_sent) === 1,
     notes: row.notes || undefined,
   };
 }
@@ -118,9 +120,12 @@ export async function initDatabase({ defaultConfig, initialRegistrations }) {
       utr_number VARCHAR(64) DEFAULT '',
       payer_upi_app VARCHAR(50) DEFAULT '',
       screenshot_url LONGTEXT NULL,
+      cashfree_order_id VARCHAR(100) DEFAULT NULL,
       payment_status VARCHAR(32) NOT NULL DEFAULT 'pending',
       registered_at VARCHAR(40) NOT NULL,
       email_sent TINYINT(1) NOT NULL DEFAULT 0,
+      payment_receipt_sent TINYINT(1) NOT NULL DEFAULT 0,
+      payment_receipt_claimed_at DATETIME NULL,
       notes TEXT NULL
     )
   `);
@@ -144,6 +149,24 @@ export async function initDatabase({ defaultConfig, initialRegistrations }) {
   await pool.query(
     "ALTER TABLE registrations MODIFY COLUMN screenshot_url LONGTEXT NULL",
   );
+
+  try {
+    await pool.query('ALTER TABLE registrations ADD COLUMN cashfree_order_id VARCHAR(100) DEFAULT NULL AFTER screenshot_url');
+  } catch {
+    // Column already exists or table is fresh
+  }
+
+  try {
+    await pool.query('ALTER TABLE registrations ADD COLUMN payment_receipt_sent TINYINT(1) NOT NULL DEFAULT 0 AFTER email_sent');
+  } catch {
+    // Column already exists or table is fresh
+  }
+
+  try {
+    await pool.query('ALTER TABLE registrations ADD COLUMN payment_receipt_claimed_at DATETIME NULL AFTER payment_receipt_sent');
+  } catch {
+    // Column already exists or table is fresh
+  }
 
   const [configRows] = await pool.query(
     "SELECT id FROM app_config WHERE id = 1",
@@ -217,9 +240,9 @@ export async function insertRegistration(reg) {
   await pool.query(
     `INSERT INTO registrations (
       id, reg_number, college_name, first_name, middle_name, last_name, email, phone, dob, gender, stream, year, semester,
-      roll_number, amount, upi_id_paid_to, utr_number, payer_upi_app, screenshot_url,
+      roll_number, amount, upi_id_paid_to, utr_number, payer_upi_app, screenshot_url, cashfree_order_id,
       payment_status, registered_at, email_sent, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       reg.id,
       reg.regNumber,
@@ -240,6 +263,7 @@ export async function insertRegistration(reg) {
       reg.utrNumber || "",
       reg.payerUpiApp || "",
       reg.screenshotUrl || null,
+      reg.cashfreeOrderId || null,
       reg.paymentStatus || "pending",
       reg.registeredAt,
       reg.emailSent ? 1 : 0,
@@ -277,10 +301,48 @@ export async function findRegistrationById(id) {
   return rows[0] ? rowToRegistration(rows[0]) : null;
 }
 
+export async function findRegistrationByCashfreeOrderId(orderId) {
+  const [rows] = await pool.query('SELECT * FROM registrations WHERE cashfree_order_id = ?', [orderId]);
+  return rows[0] ? rowToRegistration(rows[0]) : null;
+}
+
+export async function markRegistrationEmailSent(id) {
+  await pool.query('UPDATE registrations SET email_sent = 1 WHERE id = ?', [id]);
+}
+
 export async function setRegistrationEmailSent(id, emailSent) {
   const [result] = await pool.query(
     "UPDATE registrations SET email_sent = ? WHERE id = ?",
     [emailSent ? 1 : 0, id],
   );
   return result.affectedRows > 0;
+}
+
+export async function updateRegistrationPaymentStatus(id, status) {
+  const [result] = await pool.query('UPDATE registrations SET payment_status = ? WHERE id = ?', [status, id]);
+  return result.affectedRows > 0;
+}
+
+export async function markPaymentReceiptSent(id) {
+  await pool.query('UPDATE registrations SET payment_receipt_sent = 1, payment_receipt_claimed_at = NULL WHERE id = ?', [id]);
+}
+
+export async function claimPaymentReceipt(id) {
+  const [result] = await pool.query(
+    `UPDATE registrations
+     SET payment_receipt_sent = 2, payment_receipt_claimed_at = UTC_TIMESTAMP()
+     WHERE id = ? AND (
+       payment_receipt_sent = 0 OR
+       (payment_receipt_sent = 2 AND payment_receipt_claimed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE))
+     )`,
+    [id]
+  );
+  return result.affectedRows > 0;
+}
+
+export async function releasePaymentReceiptClaim(id) {
+  await pool.query(
+    'UPDATE registrations SET payment_receipt_sent = 0, payment_receipt_claimed_at = NULL WHERE id = ? AND payment_receipt_sent = 2',
+    [id]
+  );
 }

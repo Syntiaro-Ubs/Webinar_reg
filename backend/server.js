@@ -1,3 +1,4 @@
-// Preserve the backend-local start command while keeping the Hostinger entry
-// point and Express routes in the repository-root server.js.
-import '../server.js';
+// Keep the backend-local entry API-only; the repository-root server.js remains
+// the combined development and Hostinger entry point.
+process.argv.push('--api-only');
+await import('../server.js');

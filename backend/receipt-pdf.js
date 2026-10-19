@@ -15,7 +15,8 @@ export async function generateReceiptPdf(registration, config) {
     .join(' ');
 
   // Generate QR code as a data-URL PNG
-  const qrPayload = `ID:${registration.regNumber}|UTR:${registration.utrNumber}|NAME:${fullName}|AMT:${registration.amount}`;
+  const paymentReference = registration.cashfreeOrderId || registration.utrNumber;
+  const qrPayload = `ID:${registration.regNumber}${paymentReference ? `|REF:${paymentReference}` : ''}|NAME:${fullName}|AMT:${registration.amount}`;
   const qrDataUrl = await QRCode.toDataURL(qrPayload, {
     width: 120,
     margin: 1,
@@ -38,9 +39,9 @@ export async function generateReceiptPdf(registration, config) {
       size: 'A4',
       margins: { top: 40, bottom: 40, left: 50, right: 50 },
       info: {
-        Title: `Receipt - ${registration.regNumber}`,
+        Title: `${registration.paymentStatus === 'verified' ? 'Payment Receipt' : 'Registration Confirmation'} - ${registration.regNumber}`,
         Author: config.collegeName || 'Webinar Registration System',
-        Subject: `Payment Receipt for ${fullName}`,
+        Subject: `${registration.paymentStatus === 'verified' ? 'Payment Receipt' : 'Registration Confirmation'} for ${fullName}`,
       },
     });
 
@@ -59,18 +60,20 @@ export async function generateReceiptPdf(registration, config) {
 
     // Green tag
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#34d399');
-    doc.text('OFFICIAL DELEGATE PASS & PAYMENT RECEIPT', leftMargin, 18, { width: contentWidth });
+    doc.text(registration.paymentStatus === 'verified' ? 'OFFICIAL DELEGATE PASS & PAYMENT RECEIPT' : registration.paymentStatus === 'rejected' ? 'PAYMENT NOT APPROVED' : 'REGISTRATION SUCCESSFUL', leftMargin, 18, { width: contentWidth });
 
     // Title
     doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff');
-    doc.text(registration.paymentStatus === 'verified' ? 'Registration Confirmed' : 'Registration Received', leftMargin, 34, { width: contentWidth });
+    doc.text(registration.paymentStatus === 'verified' ? 'Registration Confirmed' : registration.paymentStatus === 'rejected' ? 'Payment Rejected' : 'Registration Successful', leftMargin, 34, { width: contentWidth });
 
     // Subtitle
     doc.font('Helvetica').fontSize(9).fillColor('#cbd5e1');
     doc.text(
       registration.paymentStatus === 'verified'
         ? `Hello ${registration.firstName}, your seat for "${config.webinarTitle || 'the webinar'}" is secured.`
-        : `Hello ${registration.firstName}, we received your registration for "${config.webinarTitle || 'the webinar'}". Payment is pending verification.`,
+        : registration.paymentStatus === 'rejected'
+          ? `Hello ${registration.firstName}, the submitted payment was not approved. Please contact the organizer.`
+          : `Hello ${registration.firstName}, your registration for "${config.webinarTitle || 'the webinar'}" is successful. Payment confirmation is pending from Cashfree.`,
       leftMargin, 58, { width: contentWidth }
     );
 
@@ -104,7 +107,7 @@ export async function generateReceiptPdf(registration, config) {
     // ─────────── BANNER ───────────
     doc.rect(leftMargin, y, contentWidth, 22).fillAndStroke('#f1f5f9', '#cbd5e1');
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a');
-    doc.text(registration.paymentStatus === 'verified' ? 'OFFICIAL FEE RECEIPT & DELEGATE ADMISSION PASS' : 'REGISTRATION SUMMARY - PAYMENT PENDING', leftMargin, y + 6, {
+    doc.text(registration.paymentStatus === 'verified' ? 'OFFICIAL FEE RECEIPT & DELEGATE ADMISSION PASS' : registration.paymentStatus === 'rejected' ? 'PAYMENT REJECTED' : 'REGISTRATION SUCCESSFUL', leftMargin, y + 6, {
       width: contentWidth,
       align: 'center',
     });
@@ -125,9 +128,14 @@ export async function generateReceiptPdf(registration, config) {
 
     // PAID badge
     const badgeX = pageWidth - 50 - 60;
-    doc.roundedRect(badgeX, y + 14, 48, 22, 4).fillAndStroke('#ecfdf5', '#a7f3d0');
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#065f46');
-    doc.text(registration.paymentStatus === 'verified' ? 'PAID' : 'PENDING', badgeX, y + 20, { width: 48, align: 'center' });
+    const badgeColors = registration.paymentStatus === 'verified'
+      ? ['#ecfdf5', '#a7f3d0', '#065f46']
+      : registration.paymentStatus === 'rejected'
+        ? ['#fef2f2', '#fecaca', '#991b1b']
+        : ['#eef2ff', '#c7d2fe', '#3730a3'];
+    doc.roundedRect(badgeX, y + 14, 48, 22, 4).fillAndStroke(badgeColors[0], badgeColors[1]);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(badgeColors[2]);
+    doc.text(registration.paymentStatus === 'verified' ? 'PAID' : registration.paymentStatus === 'rejected' ? 'REJECTED' : 'REGISTERED', badgeX, y + 20, { width: 48, align: 'center' });
 
     y += 62;
 
@@ -177,7 +185,7 @@ export async function generateReceiptPdf(registration, config) {
 
     // ─────────── PAYMENT LEDGER TABLE ───────────
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a');
-    doc.text('PAYMENT LEDGER', leftMargin, y);
+    doc.text(registration.paymentStatus === 'verified' ? 'PAYMENT LEDGER' : 'REGISTRATION FEE', leftMargin, y);
     y += 14;
 
     // Header row
@@ -190,7 +198,7 @@ export async function generateReceiptPdf(registration, config) {
 
     let colX = leftMargin + ledgerCols[0];
     doc.moveTo(colX, y).lineTo(colX, y + 20).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
-    doc.text('MODE & UTR', colX + 8, y + 6, { width: ledgerCols[1] - 16 });
+    doc.text('PAYMENT STATUS', colX + 8, y + 6, { width: ledgerCols[1] - 16 });
 
     colX += ledgerCols[1];
     doc.moveTo(colX, y).lineTo(colX, y + 20).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
@@ -207,9 +215,9 @@ export async function generateReceiptPdf(registration, config) {
     colX = leftMargin + ledgerCols[0];
     doc.moveTo(colX, y).lineTo(colX, y + 30).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
     doc.font('Helvetica').fontSize(8).fillColor('#0f172a');
-    doc.text(`UPI (${registration.payerUpiApp || 'Online'})`, colX + 8, y + 5, { width: ledgerCols[1] - 16 });
+    doc.text(registration.paymentStatus === 'verified' ? `${registration.payerUpiApp || 'UPI'} - Confirmed` : registration.paymentStatus === 'rejected' ? 'Rejected' : 'Unverified', colX + 8, y + 5, { width: ledgerCols[1] - 16 });
     doc.font('Helvetica').fontSize(7).fillColor('#64748b');
-    doc.text(`UTR: ${registration.utrNumber}`, colX + 8, y + 17, { width: ledgerCols[1] - 16 });
+    if (paymentReference) doc.text(`Ref: ${paymentReference}`, colX + 8, y + 17, { width: ledgerCols[1] - 16 });
 
     colX += ledgerCols[1];
     doc.moveTo(colX, y).lineTo(colX, y + 30).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
@@ -222,7 +230,7 @@ export async function generateReceiptPdf(registration, config) {
     doc.rect(leftMargin, y, contentWidth, 22).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
     const totalLabelWidth = ledgerCols[0] + ledgerCols[1];
     doc.font('Helvetica-Bold').fontSize(8).fillColor('#475569');
-    doc.text('Total Paid:', leftMargin + 8, y + 6, { width: totalLabelWidth - 16, align: 'right' });
+    doc.text(registration.paymentStatus === 'verified' ? 'Total Paid:' : 'Fee:', leftMargin + 8, y + 6, { width: totalLabelWidth - 16, align: 'right' });
 
     colX = leftMargin + totalLabelWidth;
     doc.moveTo(colX, y).lineTo(colX, y + 22).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
@@ -236,7 +244,7 @@ export async function generateReceiptPdf(registration, config) {
     doc.font('Helvetica').fontSize(7).fillColor('#475569');
     doc.text(`In Words: ${amountInWords} Only`, leftMargin + 8, y + 5, { width: contentWidth * 0.65 });
     doc.font('Helvetica-Bold').fontSize(7).fillColor('#065f46');
-    doc.text(registration.paymentStatus === 'verified' ? 'Confirmed & Settled' : 'Awaiting Verification', leftMargin + 8, y + 5, { width: contentWidth - 16, align: 'right' });
+    doc.text(registration.paymentStatus === 'verified' ? 'Confirmed & Settled' : registration.paymentStatus === 'rejected' ? 'Payment rejected' : 'Payment confirmation pending from Cashfree', leftMargin + 8, y + 5, { width: contentWidth - 16, align: 'right' });
     y += 28;
 
     // ─────────── QR CODE + VERIFICATION SEAL ───────────
@@ -247,15 +255,13 @@ export async function generateReceiptPdf(registration, config) {
 
     // QR text
     doc.font('Helvetica-Bold').fontSize(7).fillColor('#0f172a');
-    doc.text('DIGITAL SECURITY QR', leftMargin + 76, y + 12);
+    doc.text('REGISTRATION QR', leftMargin + 76, y + 12);
     doc.font('Helvetica').fontSize(7).fillColor('#64748b');
     doc.text('Scan to verify delegate credentials.', leftMargin + 76, y + 24);
     doc.font('Helvetica').fontSize(7).fillColor('#64748b');
-    doc.text(`UTR: `, leftMargin + 76, y + 36);
-    doc.font('Helvetica-Bold').fontSize(7).fillColor('#0f172a');
-    doc.text(registration.utrNumber, leftMargin + 100, y + 36);
+    doc.text(`Registration no: ${registration.regNumber}`, leftMargin + 76, y + 36, { width: contentWidth - 135 });
     doc.font('Helvetica').fontSize(7).fillColor('#64748b');
-    doc.text(`Paid to: ${registration.upiIdPaidTo}`, leftMargin + 76, y + 48);
+    doc.text(registration.paymentStatus === 'verified' ? `Payment via ${registration.payerUpiApp || 'UPI'}` : 'Payment is not confirmed', leftMargin + 76, y + 48);
 
     // Verification seal (right side)
     const sealX = pageWidth - 50 - 110;
@@ -270,7 +276,7 @@ export async function generateReceiptPdf(registration, config) {
     y += 82;
 
     // ─────────── WHATSAPP CTA ───────────
-    if (config.whatsappGroupLink) {
+    if (registration.paymentStatus === 'verified' && config.whatsappGroupLink) {
       doc.roundedRect(leftMargin, y, contentWidth, 42, 4).fillAndStroke('#ecfdf5', '#a7f3d0');
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#065f46');
       doc.text('Next step: Join the WhatsApp Community', leftMargin + 12, y + 8, { width: contentWidth - 24 });
@@ -291,7 +297,11 @@ export async function generateReceiptPdf(registration, config) {
     // ─────────── FOOTNOTE ───────────
     doc.font('Helvetica').fontSize(7).fillColor('#94a3b8');
     doc.text(
-      'Note: Computer-generated receipt. No physical signature required.',
+      registration.paymentStatus === 'verified'
+        ? 'Note: Computer-generated payment receipt. No physical signature required.'
+        : registration.paymentStatus === 'rejected'
+          ? 'Note: Payment was not approved. Contact the organizer for help.'
+          : 'Note: Registration confirmation only; payment has not been confirmed.',
       leftMargin, y
     );
     y += 12;
