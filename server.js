@@ -26,6 +26,11 @@ import {
 } from './backend/db.js';
 import { sendRegistrationEmail } from './backend/email.js';
 import { generateReceiptPdf } from './backend/receipt-pdf.js';
+import {
+    buildCashfreeOrderMeta,
+    getCashfreeConfig,
+    verifyCashfreeWebhookSignature,
+} from './backend/cashfree-config.js';
 
 // Initial default configuration
 const DEFAULT_CONFIG = {
@@ -71,34 +76,18 @@ const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const adminSessions = new Map();
 const adminLoginAttempts = new Map();
 const CASHFREE_API_VERSION = '2025-01-01';
-
-function getCashfreeSettings() {
-    const configuredEnvironment = (process.env.CASHFREE_ENV || process.env.CASHFREE_ENVIRONMENT || 'production').trim().toLowerCase();
-    const environment = configuredEnvironment === 'test' ? 'sandbox' : configuredEnvironment;
-    if (!['production', 'sandbox'].includes(environment)) {
-        throw new Error('Set CASHFREE_ENV to sandbox (or test) or production.');
-    }
-    const appId = process.env.CASHFREE_APP_ID;
-    const secretKey = process.env.CASHFREE_SECRET_KEY;
-    if (!appId || !secretKey) {
-        throw new Error('Cashfree is not configured. Set CASHFREE_APP_ID and CASHFREE_SECRET_KEY on the server.');
-    }
-    return {
-        environment,
-        secretKey,
-        apiBase: environment === 'sandbox' ? 'https://sandbox.cashfree.com/pg' : 'https://api.cashfree.com/pg',
-    };
-}
+let activeCashfreeConfig;
 
 async function requestCashfree(pathname, options = {}) {
-    const settings = getCashfreeSettings();
+    const settings = activeCashfreeConfig;
+    if (!settings) throw new Error('Cashfree configuration was not initialized.');
     const response = await fetch(`${settings.apiBase}${pathname}`, {
         ...options,
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
             'x-api-version': CASHFREE_API_VERSION,
-            'x-client-id': process.env.CASHFREE_APP_ID,
+            'x-client-id': settings.appId,
             'x-client-secret': settings.secretKey,
             ...options.headers,
         },
@@ -147,6 +136,13 @@ async function startServer() {
         console.error('Production startup requires ADMIN_PASSWORD with at least 12 characters.');
         process.exit(1);
     }
+    activeCashfreeConfig = getCashfreeConfig();
+    if (activeCashfreeConfig.modeWasDefaulted) {
+        console.warn('Invalid CASHFREE_ENV; defaulting to sandbox. Set it to sandbox or production explicitly.');
+    }
+    console.log(activeCashfreeConfig.environment === 'sandbox'
+        ? '[Cashfree] TEST MODE: sandbox payments are enabled.'
+        : '[Cashfree] LIVE MODE: production payments are enabled.');
     try {
         await initDatabase({
             defaultConfig: DEFAULT_CONFIG,
@@ -365,17 +361,14 @@ async function startServer() {
     // Cashfree calls this signed endpoint after payment events. Browser redirects are verified separately below.
     app.post('/api/webhooks/cashfree', async (req, res) => {
         try {
-            const settings = getCashfreeSettings();
+            const settings = activeCashfreeConfig;
             const signature = req.get('x-webhook-signature') || '';
             const timestamp = req.get('x-webhook-timestamp') || '';
             const rawBody = req.rawBody;
             if (!signature || !timestamp || !rawBody) {
                 return res.status(400).json({ success: false, error: 'Missing Cashfree webhook signature data.' });
             }
-            const expected = crypto.createHmac('sha256', settings.secretKey).update(timestamp + rawBody).digest('base64');
-            const expectedBuffer = Buffer.from(expected);
-            const receivedBuffer = Buffer.from(signature);
-            if (expectedBuffer.length !== receivedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
+            if (!verifyCashfreeWebhookSignature(settings, { signature, timestamp, rawBody })) {
                 return res.status(401).json({ success: false, error: 'Invalid Cashfree webhook signature.' });
             }
 
@@ -455,57 +448,7 @@ async function startServer() {
             if (!Number.isFinite(amount) || amount < 1) {
                 return res.status(400).json({ success: false, error: 'The registration fee must be at least ₹1 to accept Cashfree payments.' });
             }
-            const settings = getCashfreeSettings();
-            let publicOrigin = process.env.APP_URL?.trim().replace(/\/+$/, '') || '';
-            let parsedOrigin;
-            if (publicOrigin) {
-                try {
-                    parsedOrigin = new URL(publicOrigin);
-                }
-                catch {
-                    return res.status(503).json({ success: false, error: 'Set APP_URL to a valid absolute URL. For local testing, use CASHFREE_ENV=sandbox.' });
-                }
-            }
-            if (!publicOrigin) {
-                if (settings.environment === 'production') {
-                    return res.status(503).json({
-                        success: false,
-                        error: 'Production checkout requires APP_URL to be a public HTTPS URL. For local testing, change CASHFREE_ENV to sandbox and use sandbox credentials.',
-                    });
-                }
-                publicOrigin = req.get('origin') || `http://localhost:${FRONTEND_PORT}`;
-                try {
-                    parsedOrigin = new URL(publicOrigin);
-                }
-                catch {
-                    return res.status(503).json({ success: false, error: 'The checkout return URL is invalid.' });
-                }
-            }
-            const hostname = parsedOrigin.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-            const ipv4 = hostname.split('.').map(Number);
-            const hasIpv4Address = ipv4.length === 4 && ipv4.every((part) => Number.isInteger(part) && part >= 0 && part <= 255);
-            const isPrivateIpv4 = hasIpv4Address && (
-                ipv4[0] === 0 || ipv4[0] === 10 || ipv4[0] === 127
-                || (ipv4[0] === 169 && ipv4[1] === 254)
-                || (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31)
-                || (ipv4[0] === 192 && ipv4[1] === 168)
-            );
-            const isLocalHost = hostname === 'localhost' || hostname.endsWith('.localhost')
-                || hostname === '::1' || hostname === '0.0.0.0'
-                || (hostname.includes(':') && (/^(fc|fd)/.test(hostname) || hostname.startsWith('fe80:')))
-                || isPrivateIpv4;
-            const isProductionUrlInvalid = settings.environment === 'production'
-                && (parsedOrigin.protocol !== 'https:' || isLocalHost);
-            if (!['https:', 'http:'].includes(parsedOrigin.protocol)) {
-                return res.status(503).json({ success: false, error: 'APP_URL must use http or https.' });
-            }
-            if (isProductionUrlInvalid) {
-                return res.status(503).json({
-                    success: false,
-                    error: 'Production checkout requires APP_URL to be a public HTTPS URL. For local HTTP testing, change CASHFREE_ENV to sandbox and use sandbox credentials.',
-                });
-            }
-            publicOrigin = parsedOrigin.origin;
+            const settings = activeCashfreeConfig;
             const timestamp = new Date().toISOString();
             const regNumber = `REG-${new Date().getFullYear()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
             const id = crypto.randomUUID();
@@ -523,10 +466,7 @@ async function startServer() {
                         customer_email: email.trim().toLowerCase(),
                         customer_phone: customerPhone,
                     },
-                    order_meta: {
-                        return_url: `${publicOrigin}/register?order_id={order_id}`,
-                        notify_url: `${publicOrigin}/api/webhooks/cashfree`,
-                    },
+                    order_meta: buildCashfreeOrderMeta(settings),
                     order_note: `Registration for ${(config.webinarTitle || 'webinar').slice(0, 100)}`,
                 }),
             });
@@ -572,7 +512,7 @@ async function startServer() {
         }
         catch (err) {
             console.error('[Cashfree] Could not create checkout order:', err.message);
-            const isConfigurationError = /not configured|CASHFREE_ENV(?:IRONMENT)?/i.test(err.message);
+            const isConfigurationError = /Missing Cashfree .*credentials|CASHFREE_ENV|CASHFREE_(?:TEST|LIVE)_|APP_URL/i.test(err.message);
             const isDevelopment = process.env.NODE_ENV !== 'production';
             res.status(isConfigurationError ? 503 : 502).json({
                 success: false,

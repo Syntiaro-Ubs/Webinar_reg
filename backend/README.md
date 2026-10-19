@@ -83,16 +83,18 @@ Use `npm start` as the start command and the repository-root `server.js` as the 
 
 In Hostinger's build environment, set `VITE_API_URL=https://webinarenrollment.vedhaai.in` before running `npm run build`. `GET /config` is a simple server status endpoint; the frontend fetches its dynamic configuration from `/api/config`. Because the frontend and API share this origin, no CORS configuration is needed.
 
-For local payment testing, put sandbox credentials in the project-root `.env`:
+For local payment testing, put the test credentials in the project-root `.env`:
 
 ```env
 CASHFREE_ENV=sandbox
-CASHFREE_APP_ID=your_sandbox_app_id
-CASHFREE_SECRET_KEY=your_sandbox_secret_key
-APP_URL=http://localhost:5173
+CASHFREE_TEST_APP_ID=your_sandbox_app_id
+CASHFREE_TEST_SECRET_KEY=your_sandbox_secret_key
+APP_URL=http://localhost:3000
 ```
 
-This repository serves the local React app through Vite on port 5173; set `APP_URL` to the browser-facing app origin. The app's own URL validation permits localhost and HTTP in sandbox mode. Sandbox also accepts `CASHFREE_ENV=test`. The backend maps both values to Cashfree's sandbox API. The older `CASHFREE_ENVIRONMENT` variable remains supported for existing deployments, but `CASHFREE_ENV` takes precedence. If Cashfree's sandbox API rejects an HTTP return URL, use an HTTPS tunnel because the provider's URL checks happen after the app's validation.
+`APP_URL` must match the browser-facing app origin. Use `http://localhost:5173` when running the Vite dev server, or port `3000` when the combined server serves the frontend. Sandbox mode allows localhost and HTTP. Cashfree's sandbox API base is `https://sandbox.cashfree.com/pg`.
+
+Cashfree cannot send a webhook to a localhost address. For webhook testing, point `APP_URL` to a public HTTPS tunnel; the app then includes `notify_url`. With a localhost `APP_URL`, the browser return flow still verifies payment through Cashfree's API, and no unreachable webhook URL is sent.
 
 For production, configure these values in Hostinger's environment settings. Do not commit them in `.env`:
 
@@ -111,11 +113,11 @@ SMTP_USER=your-smtp-user
 SMTP_PASS=your-smtp-password
 SMTP_FROM=your-sender-address
 CASHFREE_ENV=production
-CASHFREE_APP_ID=your_cashfree_app_id
-CASHFREE_SECRET_KEY=your_cashfree_secret_key
+CASHFREE_LIVE_APP_ID=your_cashfree_live_app_id
+CASHFREE_LIVE_SECRET_KEY=your_cashfree_live_secret_key
 ```
 
-Keep Cashfree credentials on the backend only; never add them to `VITE_*` variables or frontend code. In production, `APP_URL` must be a public HTTPS origin with no trailing slash. The app permits localhost and HTTP return URLs in sandbox mode. A Cashfree webhook cannot reach localhost from Cashfree's servers; use a public HTTPS tunnel for actual webhook delivery, or rely on the return flow's server-side payment-status check while testing only on localhost. Hostinger supplies `PORT`; leave it unset in production unless its Node.js application setup explicitly asks you to enter the assigned value. Make sure the MySQL database and user exist in Hostinger before starting the app.
+Keep Cashfree credentials on the backend only; never add them to `VITE_*` variables or frontend code. Production requires a public HTTPS `APP_URL`; localhost and private IP addresses are rejected. Cashfree production API requests use `https://api.cashfree.com/pg`. Missing or invalid `CASHFREE_ENV` defaults to sandbox, and the server logs a `TEST MODE` or `LIVE MODE` indicator at startup. The active mode's missing credential variable names are printed in the startup error, never the secret values. Hostinger supplies `PORT`; leave it unset in production unless its Node.js application setup explicitly asks you to enter the assigned value. Make sure the MySQL database and user exist in Hostinger before starting the app.
 
 ## API Endpoints
 
