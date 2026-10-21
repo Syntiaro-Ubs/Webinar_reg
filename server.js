@@ -210,6 +210,24 @@ async function startServer() {
     app.get('/health', (req, res) => {
         res.status(200).json({ status: 'ok' });
     });
+
+    // Keep configuration diagnostics available only during local development.
+    app.get('/api/check-env', (req, res) => {
+        if (process.env.NODE_ENV !== 'development') {
+            return res.sendStatus(404);
+        }
+        res.json({
+            success: true,
+            data: {
+                nodeEnv: process.env.NODE_ENV || 'not set',
+                hasAdminPassword: !!process.env.ADMIN_PASSWORD,
+                adminPasswordLength: process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.length : 0,
+                appUrl: process.env.APP_URL || 'not set',
+                dbHost: process.env.DB_HOST || 'not set',
+                smtpConfigured: !!(process.env.SMTP_HOST && process.env.SMTP_USER),
+            }
+        });
+    });
     if (apiOnly) {
         app.get('/', (req, res) => {
             res.json({ success: true, message: 'Webinar registration API is running', health: '/api/health' });
@@ -230,12 +248,14 @@ async function startServer() {
     app.post('/api/admin/login', (req, res) => {
         const configuredPassword = process.env.ADMIN_PASSWORD || '';
         if (configuredPassword.length < 12) {
+            console.error('[Admin Login] ADMIN_PASSWORD not configured or too short');
             return res.status(503).json({ success: false, error: 'Set ADMIN_PASSWORD to at least 12 characters in the root .env file.' });
         }
         const ip = req.ip || req.socket.remoteAddress || 'unknown';
         const now = Date.now();
         const attempt = adminLoginAttempts.get(ip);
         if (attempt && now - attempt.startedAt < 15 * 60 * 1000 && attempt.count >= 10) {
+            console.warn(`[Admin Login] Rate limit exceeded for IP: ${ip}`);
             return res.status(429).json({ success: false, error: 'Too many login attempts. Try again in 15 minutes.' });
         }
         if (typeof req.body?.password !== 'string' || !passwordsMatch(req.body.password, configuredPassword)) {
@@ -243,6 +263,7 @@ async function startServer() {
                 ? { startedAt: attempt.startedAt, count: attempt.count + 1 }
                 : { startedAt: now, count: 1 };
             adminLoginAttempts.set(ip, next);
+            console.warn(`[Admin Login] Failed login attempt from IP: ${ip} (attempt ${next.count}/10)`);
             return res.status(401).json({ success: false, error: 'Incorrect admin password.' });
         }
         adminLoginAttempts.delete(ip);
@@ -254,6 +275,7 @@ async function startServer() {
         const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
         res.set('Cache-Control', 'no-store');
         res.set('Set-Cookie', `webinar_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(ADMIN_SESSION_TTL_MS / 1000)}${secure}`);
+        console.log(`[Admin Login] Successful login from IP: ${ip}`);
         res.json({ success: true, data: { authenticated: true } });
     });
     app.get('/api/admin/session', (req, res) => {
