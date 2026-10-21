@@ -36,6 +36,7 @@ export async function logoutAdmin() {
 export async function saveBackendConfig(config) {
     const res = await fetch(apiUrl('/api/config'), {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
     });
@@ -46,7 +47,9 @@ export async function saveBackendConfig(config) {
     return true;
 }
 export async function fetchBackendRegistrations() {
-    const res = await fetch(apiUrl('/api/registrations'));
+    const res = await fetch(apiUrl('/api/registrations'), {
+        credentials: 'same-origin'
+    });
     if (!res.ok) throw new Error('Failed to fetch registrations');
     const json = await res.json();
     return json.data;
