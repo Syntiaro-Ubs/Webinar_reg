@@ -18,12 +18,12 @@ export async function fetchAdminSession() {
     const json = await res.json();
     return Boolean(json.data?.authenticated);
 }
-export async function loginAdmin(password) {
+export async function loginAdmin(username, password) {
     const res = await fetch(apiUrl('/api/admin/login'), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ username, password })
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Admin login failed');

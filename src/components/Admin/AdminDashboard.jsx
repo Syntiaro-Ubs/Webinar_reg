@@ -23,6 +23,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
     const [linkCopied, setLinkCopied] = useState(false);
     const [authChecked, setAuthChecked] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [adminUsername, setAdminUsername] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -99,7 +100,8 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
         setIsLoggingIn(true);
         setLoginError('');
         try {
-            await loginAdmin(adminPassword);
+            await loginAdmin(adminUsername, adminPassword);
+            setAdminUsername('');
             setAdminPassword('');
             setIsAuthenticated(true);
             await onRefreshRegistrations();
@@ -239,8 +241,10 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
           <form onSubmit={handleAdminLogin} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center"><ShieldCheck className="w-5 h-5"/></div>
-              <div><h1 className="text-lg font-semibold text-slate-900">Admin sign in</h1><p className="text-sm text-slate-500">Enter the admin password to manage registrations.</p></div>
+              <div><h1 className="text-lg font-semibold text-slate-900">Admin sign in</h1><p className="text-sm text-slate-500">Enter your admin username and password to manage registrations.</p></div>
             </div>
+            <label className="block text-sm font-medium text-slate-700" htmlFor="admin-username">Admin username</label>
+            <input id="admin-username" type="text" autoComplete="username" required maxLength={191} value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
             <label className="block text-sm font-medium text-slate-700" htmlFor="admin-password">Admin password</label>
             <input id="admin-password" type="password" autoComplete="current-password" required value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
             {loginError && <p role="alert" className="text-sm text-red-700">{loginError}</p>}

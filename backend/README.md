@@ -38,8 +38,6 @@ backend/
    SMTP_PASS=your_app_password
    SMTP_FROM=your_email@gmail.com
 
-   ADMIN_PASSWORD=use-a-unique-random-password-at-least-12-characters
-   
    PORT=3000
    NODE_ENV=development
    ```
@@ -66,6 +64,11 @@ npm run backend:clear
 You can also start the API-only backend from this `backend/` folder with
 `node server.js`. It listens on port 3000 by default; run the frontend separately
 from the project root with `npm run dev` to serve it on port 5173.
+
+Create the initial admin from the project root with `npm run create-admin` (or
+from `backend/` with `npm run create-admin`). The script verifies the target
+database name, hides password input, stores a bcrypt hash, and refuses to create
+an account if any admin already exists.
 
 ## Hostinger deployment
 
@@ -106,7 +109,6 @@ DB_PORT=3306
 DB_USER=your_database_user
 DB_PASSWORD=your_database_password
 DB_NAME=your_database_name
-ADMIN_PASSWORD=use-a-unique-random-password-at-least-12-characters
 SMTP_HOST=your-smtp-host
 SMTP_PORT=587
 SMTP_USER=your-smtp-user
@@ -134,12 +136,22 @@ Keep Cashfree credentials on the backend only; never add them to `VITE_*` variab
 
 Students pay through Cashfree checkout. The backend sets the fee, creates the order, validates signed webhooks, and checks the payment with Cashfree before marking it paid. A confirmed payment triggers one receipt email with a PDF attachment and the configured WhatsApp community invite. Students still need to open the invite and join the WhatsApp group themselves.
 
-Admin routes require the `ADMIN_PASSWORD` from the root `.env`. The server creates an HttpOnly, same-site session cookie after login. Set `NODE_ENV=production`, use HTTPS, and configure a strong admin password before deployment.
+Admin login uses the username and bcrypt password hash stored in the MySQL `admins` table. The server creates an HttpOnly, same-site session cookie after login. Set `NODE_ENV=production`, use HTTPS, and create the initial account with `npm run create-admin` before testing admin access.
 
 ## Database
 
 The backend automatically creates the MySQL database and tables on first run. It uses the `webinar_reg` database with tables:
 - `app_config` - Application configuration
 - `registrations` - Student registrations
+- `admins` - Admin usernames and bcrypt password hashes
 
 The database initialization creates the tables and applies additive compatibility migrations. Runtime configuration is stored in `app_config`; changing `data/config.json` after the first database seed does not overwrite admin-saved settings.
+
+## Safe admin account rollout
+
+1. **Back up the existing database before deploying.** In Hostinger hPanel, open the database's phpMyAdmin, select the application database named by `DB_NAME`, choose **Export**, use SQL format, and download the backup to a private location outside the web root and repository. Confirm the file downloaded before proceeding. This rollout only adds `admins`; it does not drop or recreate student or configuration tables.
+2. **Deploy from the repository root.** Install locked dependencies with `npm ci` and `npm --prefix backend ci`, build with `npm run build`, then restart the Node.js application using `npm start`. The app startup creates the `admins` table with `CREATE TABLE IF NOT EXISTS`. `websem.sql` is an optional additive schema statement if you prefer to create the table in phpMyAdmin first.
+3. **Create the first admin on the server.** Open Hostinger's SSH/terminal in the project root, make sure the process has the intended `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME`, and run `npm run create-admin`. The script displays the database name and host and requires you to type the exact database name to confirm. Enter a username (3-191 letters, numbers, `@`, dots, dashes, or underscores), then enter and confirm the password at the hidden prompts. Do not put the admin password or MySQL password in the command line. The script hashes the admin password with bcrypt and refuses to add any account if an admin already exists.
+4. **If Hostinger's shell does not inherit the app environment**, run the script from a trusted machine using a protected local environment file configured for the Hostinger MySQL database and a database user restricted to that database. Restrict MySQL remote access to that machine's IP for the setup, run `npm run create-admin` from the project root, then remove the temporary connection configuration and revoke the temporary IP access. Do not paste secrets into a shell command or commit an environment file.
+5. **Test before removing the old `ADMIN_PASSWORD` setting.** Sign in at `/admin` with the new username/password, reload and confirm the session remains active, view registrations, and sign out. Confirm the dashboard returns to login and a protected request such as `GET /api/registrations` receives 401 after logout. Verify public student registration and the Cashfree checkout flow as part of the deployment check. Keep the old Hostinger variable during this test and your rollback window; the new application does not read it.
+6. **Remove `ADMIN_PASSWORD` only after the new login and protected API checks pass** and you no longer need to roll back to the previous password-based release. Remove it from Hostinger's environment settings and restart the app. It is not required for startup or login in this version.

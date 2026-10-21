@@ -1,0 +1,5 @@
+﻿# 401 admin login patch
+
+This old patch is obsolete. The current login implementation uses a MySQL admin account and session cookie. Do not apply this patch; use the current source and the deployment guidance in [backend/README.md](backend/README.md#safe-admin-account-rollout).
+
+No passwords, password hashes, payment secrets, or database credentials belong in this file.

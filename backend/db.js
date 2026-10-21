@@ -30,6 +30,18 @@ const dbSettings = {
 
 let pool;
 
+const ADMINS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS admins (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    username VARCHAR(191) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_admins_username (username)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`;
+
 function parseJsonColumn(value, fallback) {
   if (value == null) return fallback;
   if (typeof value === "object") return value;
@@ -69,7 +81,9 @@ function rowToRegistration(row) {
   };
 }
 
-export async function initDatabase({ defaultConfig, initialRegistrations }) {
+async function connectDatabase() {
+  if (pool) return;
+
   const {
     database,
     waitForConnections,
@@ -79,10 +93,14 @@ export async function initDatabase({ defaultConfig, initialRegistrations }) {
   } = dbSettings;
 
   const bootstrap = await mysql.createConnection(serverConfig);
-  await bootstrap.query(
-    `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  );
-  await bootstrap.end();
+  try {
+    const quotedDatabase = `\`${database.replace(/`/g, "``")}\``;
+    await bootstrap.query(
+      `CREATE DATABASE IF NOT EXISTS ${quotedDatabase} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    );
+  } finally {
+    await bootstrap.end();
+  }
 
   pool = mysql.createPool({
     ...serverConfig,
@@ -91,6 +109,16 @@ export async function initDatabase({ defaultConfig, initialRegistrations }) {
     connectionLimit,
     timezone,
   });
+
+  await pool.query(ADMINS_TABLE_SQL);
+}
+
+export async function initAdminDatabase() {
+  await connectDatabase();
+}
+
+export async function initDatabase({ defaultConfig, initialRegistrations }) {
+  await connectDatabase();
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_config (
@@ -212,6 +240,58 @@ export async function initDatabase({ defaultConfig, initialRegistrations }) {
   console.log(
     `MySQL connected: ${dbSettings.user}@${dbSettings.host}:${dbSettings.port}/${ping[0].db}`,
   );
+}
+
+export async function findAdminByUsername(username) {
+  const [rows] = await pool.execute(
+    "SELECT id, username, password_hash FROM admins WHERE username = ? LIMIT 1",
+    [username],
+  );
+  return rows[0] || null;
+}
+
+export async function createFirstAdmin(username, passwordHash) {
+  const connection = await pool.getConnection();
+  let lockAcquired = false;
+
+  try {
+    const [lockRows] = await connection.execute(
+      "SELECT GET_LOCK('webinar_admin_create_first', 10) AS acquired",
+    );
+    lockAcquired = Number(lockRows[0]?.acquired) === 1;
+    if (!lockAcquired) {
+      const error = new Error("Could not acquire the admin setup lock.");
+      error.code = "ADMIN_SETUP_LOCK_FAILED";
+      throw error;
+    }
+
+    const [rows] = await connection.query("SELECT COUNT(*) AS count FROM admins");
+    if (Number(rows[0]?.count) > 0) {
+      const error = new Error("An admin account already exists.");
+      error.code = "ADMIN_ALREADY_EXISTS";
+      throw error;
+    }
+
+    await connection.execute(
+      "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
+      [username, passwordHash],
+    );
+  } finally {
+    try {
+      if (lockAcquired) {
+        await connection.query("SELECT RELEASE_LOCK('webinar_admin_create_first')");
+      }
+    } finally {
+      connection.release();
+    }
+  }
+}
+
+export async function closeDatabase() {
+  if (!pool) return;
+  const currentPool = pool;
+  pool = undefined;
+  await currentPool.end();
 }
 
 export async function loadConfig() {

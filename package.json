@@ -8,17 +8,20 @@
     "dev:fullstack": "npm --prefix backend run dev",
     "start": "node server.js",
     "build": "vite build",
+    "test": "node --test backend/admin-auth.test.js",
     "preview": "vite preview",
     "frontend:dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "clean": "rm -rf dist",
     "backend:dev": "npm --prefix backend run dev:api",
     "backend:api": "npm --prefix backend run dev:api",
-    "backend:clear": "npm --prefix backend run clear"
+    "backend:clear": "npm --prefix backend run clear",
+    "create-admin": "node backend/scripts/create-admin.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "bcryptjs": "^3.0.3",
     "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
