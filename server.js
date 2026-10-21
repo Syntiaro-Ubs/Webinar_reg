@@ -246,7 +246,10 @@ async function startServer() {
         });
     });
     app.post('/api/admin/login', (req, res) => {
-        const configuredPassword = process.env.ADMIN_PASSWORD || '';
+        const configuredPassword =
+            typeof process.env.ADMIN_PASSWORD === 'string'
+                ? process.env.ADMIN_PASSWORD.trim()
+                : '';
         if (configuredPassword.length < 12) {
             console.error('[Admin Login] ADMIN_PASSWORD not configured or too short');
             return res.status(503).json({ success: false, error: 'Set ADMIN_PASSWORD to at least 12 characters in the root .env file.' });
