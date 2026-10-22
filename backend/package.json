@@ -8,13 +8,10 @@
     "dev": "node server.js",
     "dev:api": "node server.js --api-only",
     "start": "node server.js",
-    "clear": "node scripts/clear-registrations.js",
-    "test": "node --test admin-auth.test.js",
-    "create-admin": "node scripts/create-admin.js"
+    "clear": "node scripts/clear-registrations.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "mysql2": "^3.24.6",

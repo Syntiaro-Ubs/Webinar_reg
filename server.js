@@ -13,7 +13,6 @@ import os from 'os';
 import crypto from 'crypto';
 import {
     initDatabase,
-    findAdminByUsername,
     loadConfig,
     saveConfig,
     loadRegistrations,
@@ -25,7 +24,6 @@ import {
     markPaymentReceiptSent,
     releasePaymentReceiptClaim,
 } from './backend/db.js';
-import { createAdminAuth } from './backend/admin-auth.js';
 import { sendRegistrationEmail } from './backend/email.js';
 import { generateReceiptPdf } from './backend/receipt-pdf.js';
 import {
@@ -74,6 +72,9 @@ const DEFAULT_CONFIG = {
     ]
 };
 const INITIAL_REGISTRATIONS = [];
+const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const adminSessions = new Map();
+const adminLoginAttempts = new Map();
 const CASHFREE_API_VERSION = '2025-01-01';
 let activeCashfreeConfig;
 
@@ -99,7 +100,46 @@ async function requestCashfree(pathname, options = {}) {
     return responseBody;
 }
 
+function getCookie(req, name) {
+    const cookies = req.headers.cookie || '';
+    const item = cookies.split(';').map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
+    return item ? decodeURIComponent(item.slice(name.length + 1)) : '';
+}
+
+function hasAdminSession(req) {
+    const token = getCookie(req, 'webinar_admin_session');
+    const expiresAt = token ? adminSessions.get(token) : 0;
+    if (!expiresAt) return false;
+    if (expiresAt <= Date.now()) {
+        adminSessions.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function requireAdmin(req, res, next) {
+    res.set('Cache-Control', 'no-store');
+    if (!hasAdminSession(req)) {
+        return res.status(401).json({ success: false, error: 'Admin login required' });
+    }
+    next();
+}
+
+function passwordsMatch(provided, expected) {
+    const providedHash = crypto.createHash('sha256').update(provided).digest();
+    const expectedHash = crypto.createHash('sha256').update(expected).digest();
+    return crypto.timingSafeEqual(providedHash, expectedHash);
+}
+
 async function startServer() {
+    if (process.env.NODE_ENV === 'production' && (
+        !process.env.ADMIN_USERNAME?.trim()
+        || !process.env.ADMIN_PASSWORD?.trim()
+        || process.env.ADMIN_PASSWORD.trim().length < 10
+    )) {
+        console.error('Production startup requires ADMIN_USERNAME and ADMIN_PASSWORD with at least 10 characters.');
+        process.exit(1);
+    }
     activeCashfreeConfig = getCashfreeConfig();
     if (activeCashfreeConfig.modeWasDefaulted) {
         console.warn('Invalid CASHFREE_ENV; defaulting to sandbox. Set it to sandbox or production explicitly.');
@@ -118,7 +158,6 @@ async function startServer() {
         console.error(err.message);
         process.exit(1);
     }
-    const adminAuth = await createAdminAuth({ findAdminByUsername });
     const app = express();
     const httpServer = http.createServer(app);
     const PORT = process.env.PORT || 3000;
@@ -208,9 +247,66 @@ async function startServer() {
             apiUrl: '/',
         });
     });
-    app.post('/api/admin/login', adminAuth.login);
-    app.get('/api/admin/session', adminAuth.session);
-    app.post('/api/admin/logout', adminAuth.logout);
+    app.post('/api/admin/login', (req, res) => {
+        const configuredUsername =
+            typeof process.env.ADMIN_USERNAME === 'string'
+                ? process.env.ADMIN_USERNAME.trim().toLowerCase()
+                : '';
+        const configuredPassword =
+            typeof process.env.ADMIN_PASSWORD === 'string'
+                ? process.env.ADMIN_PASSWORD.trim()
+                : '';
+        if (!configuredUsername || configuredPassword.length < 10) {
+            console.error('[Admin Login] ADMIN_USERNAME or ADMIN_PASSWORD is not configured correctly');
+            return res.status(503).json({ success: false, error: 'Admin login is not configured.' });
+        }
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        const now = Date.now();
+        const attempt = adminLoginAttempts.get(ip);
+        if (attempt && now - attempt.startedAt < 15 * 60 * 1000 && attempt.count >= 10) {
+            console.warn(`[Admin Login] Rate limit exceeded for IP: ${ip}`);
+            return res.status(429).json({ success: false, error: 'Too many login attempts. Try again in 15 minutes.' });
+        }
+        const providedUsername = typeof req.body?.username === 'string'
+            ? req.body.username.trim().toLowerCase()
+            : '';
+        const providedPassword = typeof req.body?.password === 'string'
+            ? req.body.password
+            : '';
+        const usernameMatches = passwordsMatch(providedUsername, configuredUsername);
+        const passwordMatches = passwordsMatch(providedPassword, configuredPassword);
+        if (!(usernameMatches && passwordMatches)) {
+            const next = attempt && now - attempt.startedAt < 15 * 60 * 1000
+                ? { startedAt: attempt.startedAt, count: attempt.count + 1 }
+                : { startedAt: now, count: 1 };
+            adminLoginAttempts.set(ip, next);
+            console.warn(`[Admin Login] Failed login attempt from IP: ${ip} (attempt ${next.count}/10)`);
+            return res.status(401).json({ success: false, error: 'Invalid username or password.' });
+        }
+        adminLoginAttempts.delete(ip);
+        for (const [token, expiresAt] of adminSessions) {
+            if (expiresAt <= now) adminSessions.delete(token);
+        }
+        const token = crypto.randomBytes(32).toString('hex');
+        adminSessions.set(token, now + ADMIN_SESSION_TTL_MS);
+        const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+        res.set('Cache-Control', 'no-store');
+        res.set('Set-Cookie', `webinar_admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(ADMIN_SESSION_TTL_MS / 1000)}${secure}`);
+        console.log(`[Admin Login] Successful login from IP: ${ip}`);
+        res.json({ success: true, data: { authenticated: true } });
+    });
+    app.get('/api/admin/session', (req, res) => {
+        res.set('Cache-Control', 'no-store');
+        res.json({ success: true, data: { authenticated: hasAdminSession(req) } });
+    });
+    app.post('/api/admin/logout', (req, res) => {
+        const token = getCookie(req, 'webinar_admin_session');
+        if (token) adminSessions.delete(token);
+        const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+        res.set('Cache-Control', 'no-store');
+        res.set('Set-Cookie', `webinar_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
+        res.json({ success: true });
+    });
     // Dynamic application configuration used by the frontend.
     const sendPublicConfig = async (req, res) => {
         try {
@@ -223,7 +319,7 @@ async function startServer() {
     };
     app.get('/api/config', sendPublicConfig);
     // 2. PUT /api/config (Admin updates form & college details)
-    app.put('/api/config', adminAuth.requireAdmin, async (req, res) => {
+    app.put('/api/config', requireAdmin, async (req, res) => {
         try {
             const incoming = req.body;
             if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
@@ -252,7 +348,7 @@ async function startServer() {
         }
     });
     // 3. GET /api/registrations
-    app.get('/api/registrations', adminAuth.requireAdmin, async (req, res) => {
+    app.get('/api/registrations', requireAdmin, async (req, res) => {
         try {
             const regs = await loadRegistrations();
             res.json({ success: true, data: regs });
@@ -487,7 +583,7 @@ async function startServer() {
         }
     });
     // 6. GET /api/stats
-    app.get('/api/stats', adminAuth.requireAdmin, async (req, res) => {
+    app.get('/api/stats', requireAdmin, async (req, res) => {
         try {
             const regs = await loadRegistrations();
             const total = regs.length;

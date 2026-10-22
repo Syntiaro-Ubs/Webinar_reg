@@ -83,10 +83,7 @@ webinar-registration/
    - Student Registration: http://localhost:5173/register
    - Admin Dashboard: http://localhost:5173/admin
 
-6. Create the first admin account. The script asks for the database name, username, and password; password entry is hidden. It only creates an account when the `admins` table is empty:
-   ```bash
-   npm run create-admin
-   ```
+6. Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in the project-root `.env` file. The password must be at least 10 characters. Admin login uses these values and does not require a MySQL admin account.
 
 ## Scripts
 
@@ -106,8 +103,6 @@ To run the frontend and backend separately, open two terminals in the project ro
 ### Utilities
 ```bash
 npm run backend:clear    # Clear all registrations from database
-npm test                 # Run the admin authentication tests
-npm run create-admin     # Securely create the first MySQL admin account
 ```
 
 ## API Endpoints
@@ -126,7 +121,7 @@ To enable email receipts:
 2. Generate an App Password: https://myaccount.google.com/apppasswords
 3. Use the generated password in `SMTP_PASS` in your `.env` file
 
-Production must use `NODE_ENV=production`, an HTTPS `APP_URL`, HTTPS termination, a restricted MySQL account, valid SMTP settings, and at least one admin account created with `npm run create-admin`. Admin passwords are stored as bcrypt hashes in MySQL; the plaintext password is never stored. Build the frontend with `npm run build` before starting the production backend.
+Production must use `NODE_ENV=production`, an HTTPS `APP_URL`, HTTPS termination, a restricted MySQL account, `ADMIN_USERNAME`, an `ADMIN_PASSWORD` of at least 10 characters, and valid SMTP settings. Build the frontend with `npm run build` before starting the production backend.
 
 For Hostinger deployment, deploy from the project root, build the frontend, and use `npm start` as the start command. The backend uses Hostinger's `PORT` and serves the built frontend from `dist/`. See [backend/README.md](backend/README.md#hostinger-deployment) for install commands and required environment variables.
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { downloadReceiptPdf } from '../utils/api';
+import { OFFICIAL_EVENT_TITLE } from '../../data/eventTitle.js';
 import QRCode from 'qrcode';
 import {
   MessageCircle, Mail, Printer, ShieldCheck, Building2,
@@ -91,7 +92,7 @@ function CompactReceiptModal({ registration, config, onClose }) {
             <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 flex items-center justify-between gap-2">
               <div>
                 <span className="text-[9px] font-mono uppercase text-slate-400 block">Event</span>
-                <h4 className="text-xs font-bold text-slate-900">{config.webinarTitle}</h4>
+                <h4 className="text-xs font-bold text-slate-900">{OFFICIAL_EVENT_TITLE}</h4>
                 <div className="flex items-center gap-3 text-[11px] text-slate-600 mt-0.5">
                   <span className="flex items-center gap-1"><Calendar className="w-3 h-3 text-indigo-600"/>{config.webinarDate}</span>
                   <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-indigo-600"/>{config.webinarTime}</span>
@@ -275,10 +276,10 @@ export const SuccessReceiptModal = ({ registration, config, isOpen, onClose, onN
             </h2>
             <p className="text-sm text-slate-600 mt-1.5 max-w-xs">
               Hey <strong>{registration.firstName}</strong>, {registration.paymentStatus === 'verified'
-                ? <>your seat for <strong>{config.webinarTitle}</strong> is confirmed.</>
+                ? <>your seat for <strong>{OFFICIAL_EVENT_TITLE}</strong> is confirmed.</>
                 : registration.paymentStatus === 'rejected'
                   ? <>we could not verify your payment. Please contact support.</>
-                  : <>your payment for <strong>{config.webinarTitle}</strong> is still being confirmed by Cashfree. Your receipt and community invite will be emailed after confirmation.</>}
+                  : <>your payment for <strong>{OFFICIAL_EVENT_TITLE}</strong> is still being confirmed by Cashfree. Your receipt and community invite will be emailed after confirmation.</>}
             </p>
 
             {/* Reg number badge */}

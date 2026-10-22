@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+import { OFFICIAL_EVENT_TITLE } from '../data/eventTitle.js';
 
 /**
  * Generate a professional PDF receipt for a student registration.
@@ -70,10 +71,10 @@ export async function generateReceiptPdf(registration, config) {
     doc.font('Helvetica').fontSize(9).fillColor('#cbd5e1');
     doc.text(
       registration.paymentStatus === 'verified'
-        ? `Hello ${registration.firstName}, your seat for "${config.webinarTitle || 'the webinar'}" is secured.`
+        ? `Hello ${registration.firstName}, your seat for "${OFFICIAL_EVENT_TITLE}" is secured.`
         : registration.paymentStatus === 'rejected'
           ? `Hello ${registration.firstName}, the submitted payment was not approved. Please contact the organizer.`
-          : `Hello ${registration.firstName}, your registration for "${config.webinarTitle || 'the webinar'}" is successful. Payment confirmation is pending from Cashfree.`,
+          : `Hello ${registration.firstName}, your registration for "${OFFICIAL_EVENT_TITLE}" is successful. Payment confirmation is pending from Cashfree.`,
       leftMargin, 58, { width: contentWidth }
     );
 
@@ -119,7 +120,7 @@ export async function generateReceiptPdf(registration, config) {
     doc.font('Helvetica').fontSize(7).fillColor('#94a3b8');
     doc.text('EVENT', leftMargin + 12, y + 8);
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a');
-    doc.text(config.webinarTitle || 'Webinar', leftMargin + 12, y + 19, { width: contentWidth - 130 });
+    doc.text(OFFICIAL_EVENT_TITLE, leftMargin + 12, y + 19, { width: contentWidth - 130 });
     doc.font('Helvetica').fontSize(8).fillColor('#475569');
     doc.text(
       `${config.webinarDate || '—'}  ·  ${config.webinarTime || '—'}`,

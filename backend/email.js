@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { generateReceiptPdf } from './receipt-pdf.js';
+import { OFFICIAL_EVENT_TITLE } from '../data/eventTitle.js';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -13,7 +14,7 @@ function escapeHtml(value) {
 function buildReceiptHtml(registration, config) {
   const paymentVerified = registration.paymentStatus === 'verified';
   const name = escapeHtml([registration.firstName, registration.middleName, registration.lastName].filter(Boolean).join(' '));
-  const title = escapeHtml(config.webinarTitle);
+  const title = escapeHtml(OFFICIAL_EVENT_TITLE);
   const college = escapeHtml(config.collegeName);
   const whatsapp = paymentVerified ? escapeHtml(config.whatsappGroupLink) : '';
   const paymentReference = registration.cashfreeOrderId || registration.utrNumber;
@@ -106,11 +107,11 @@ export async function sendRegistrationEmail(registration, config) {
   const info = await transporter.sendMail({
     from: `"vedhaAI" <${fromAddress}>`,
     to: registration.email,
-    subject: `${registration.paymentStatus === 'verified' ? 'Payment Receipt' : 'Registration Successful'}: ${config.webinarTitle} (${registration.regNumber})`,
+    subject: `${registration.paymentStatus === 'verified' ? 'Payment Receipt' : 'Registration Successful'}: ${OFFICIAL_EVENT_TITLE} (${registration.regNumber})`,
     html: buildReceiptHtml(registration, config),
     text: [
       `Hello ${registration.firstName},`,
-      `Your registration was recorded for ${config.webinarTitle}.`,
+      `Your registration was recorded for ${OFFICIAL_EVENT_TITLE}.`,
       `Registration number: ${registration.regNumber}`,
       `Fee: ₹${registration.amount}`,
       registration.paymentStatus === 'verified'

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Mail, ExternalLink, X, Printer, MessageSquare } from 'lucide-react';
+import { OFFICIAL_EVENT_TITLE } from '../../data/eventTitle.js';
 export const EmailPreviewModal = ({ registration, config, isOpen, onClose }) => {
     if (!isOpen)
         return null;
@@ -39,7 +40,7 @@ export const EmailPreviewModal = ({ registration, config, isOpen, onClose }) => 
           <div className="flex">
             <span className="w-16 font-semibold text-slate-500">Subject:</span>
             <span className="font-bold text-slate-900">
-              {registration.paymentStatus === 'verified' ? 'Registration Confirmed & Payment Receipt' : 'Registration Received'}: {config.webinarTitle} ({registration.regNumber})
+              {registration.paymentStatus === 'verified' ? 'Registration Confirmed & Payment Receipt' : 'Registration Received'}: {OFFICIAL_EVENT_TITLE} ({registration.regNumber})
             </span>
           </div>
           <div className="flex">
@@ -59,7 +60,7 @@ export const EmailPreviewModal = ({ registration, config, isOpen, onClose }) => 
               Hello {registration.firstName}, {registration.paymentStatus === 'verified' ? 'your registration and payment are confirmed.' : 'we received your registration. The submitted UPI reference has not been verified.'}
             </h2>
             <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-              Thank you for registering for <strong className="text-slate-900">{config.webinarTitle}</strong>. {registration.paymentStatus === 'verified' ? <>Your payment of <strong className="text-slate-900">₹{registration.amount}</strong> via {registration.payerUpiApp || 'UPI'} has been verified.</> : <>The submitted UPI reference is recorded, but this app has not confirmed payment.</>}
+              Thank you for registering for <strong className="text-slate-900">{OFFICIAL_EVENT_TITLE}</strong>. {registration.paymentStatus === 'verified' ? <>Your payment of <strong className="text-slate-900">₹{registration.amount}</strong> via {registration.payerUpiApp || 'UPI'} has been verified.</> : <>The submitted UPI reference is recorded, but this app has not confirmed payment.</>}
             </p>
           </div>
 
