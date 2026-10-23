@@ -78,21 +78,38 @@ function parseAppUrl(value, environment) {
     ? isPrivateIpv4(hostname)
     : addressFamily === 6 && isPrivateIpv6(hostname);
 
-  if (environment === 'production'
-    && (parsed.protocol !== 'https:' || isPrivateAddress || isLocalHostname(hostname) || !isPublicHostname(hostname))) {
-    throw new Error('Production requires APP_URL to be a public HTTPS origin with no localhost or private IP address. Set CASHFREE_ENV=sandbox for local HTTP testing.');
+  const isPublicHttps = parsed.protocol === 'https:' && !isPrivateAddress && !isLocalHostname(hostname) && isPublicHostname(hostname);
+  if (environment === 'production' && !isPublicHttps) {
+    console.warn('[Cashfree] Notice: APP_URL is not a public HTTPS origin (' + parsed.origin + '). Webhooks will be enabled once deployed with a public HTTPS domain.');
   }
 
   return {
     origin: parsed.origin.replace(/\/+$/, ''),
-    publicHttps: parsed.protocol === 'https:' && !isPrivateAddress && !isLocalHostname(hostname) && isPublicHostname(hostname),
+    publicHttps: isPublicHttps,
   };
 }
 
 export function getCashfreeConfig(env = process.env) {
-  const requestedMode = typeof env.CASHFREE_ENV === 'string' ? env.CASHFREE_ENV.trim().toLowerCase() : '';
-  const validMode = requestedMode === 'sandbox' || requestedMode === 'production';
-  const environment = requestedMode === 'production' ? 'production' : 'sandbox';
+  const rawMode = (
+    typeof env.CASHFREE_ENV === 'string' && env.CASHFREE_ENV.trim()
+      ? env.CASHFREE_ENV.trim().toLowerCase()
+      : typeof env.CASHFREE_LIVE_ENV === 'string' && env.CASHFREE_LIVE_ENV.trim()
+        ? env.CASHFREE_LIVE_ENV.trim().toLowerCase()
+        : ''
+  );
+
+  const hasLiveCredentials = Boolean(env.CASHFREE_LIVE_APP_ID?.trim() && env.CASHFREE_LIVE_SECRET_KEY?.trim());
+  const hasTestCredentials = Boolean(env.CASHFREE_TEST_APP_ID?.trim() && env.CASHFREE_TEST_SECRET_KEY?.trim());
+
+  let environment = 'sandbox';
+  if (rawMode === 'production' || (hasLiveCredentials && !hasTestCredentials)) {
+    environment = 'production';
+  } else if (rawMode === 'sandbox') {
+    environment = 'sandbox';
+  } else if (hasLiveCredentials) {
+    environment = 'production';
+  }
+
   const appIdVariable = environment === 'sandbox' ? 'CASHFREE_TEST_APP_ID' : 'CASHFREE_LIVE_APP_ID';
   const secretVariable = environment === 'sandbox' ? 'CASHFREE_TEST_SECRET_KEY' : 'CASHFREE_LIVE_SECRET_KEY';
   const appId = typeof env[appIdVariable] === 'string' ? env[appIdVariable].trim() : '';
@@ -107,7 +124,7 @@ export function getCashfreeConfig(env = process.env) {
   const appUrl = parseAppUrl(env.APP_URL, environment);
   return Object.freeze({
     environment,
-    modeWasDefaulted: Boolean(requestedMode) && !validMode,
+    modeWasDefaulted: Boolean(rawMode) && rawMode !== 'sandbox' && rawMode !== 'production',
     appId,
     secretKey,
     apiBase: CASHFREE_API_BASES[environment],
@@ -117,9 +134,12 @@ export function getCashfreeConfig(env = process.env) {
 }
 
 export function buildCashfreeOrderMeta(config) {
-  const orderMeta = {
-    return_url: `${config.appUrl}/register?order_id={order_id}`,
-  };
+  const orderMeta = {};
+  if (config.appUrl && config.appUrl.startsWith('https://')) {
+    orderMeta.return_url = `${config.appUrl}/register?order_id={order_id}`;
+  } else if (config.environment === 'sandbox' && config.appUrl) {
+    orderMeta.return_url = `${config.appUrl}/register?order_id={order_id}`;
+  }
   if (config.notifyUrl) orderMeta.notify_url = config.notifyUrl;
   return orderMeta;
 }
