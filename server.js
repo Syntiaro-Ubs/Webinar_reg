@@ -23,6 +23,7 @@ import {
     claimPaymentReceipt,
     markPaymentReceiptSent,
     releasePaymentReceiptClaim,
+    deleteRegistration,
 } from './backend/db.js';
 import { sendRegistrationEmail } from './backend/email.js';
 import { generateReceiptPdf } from './backend/receipt-pdf.js';
@@ -357,6 +358,36 @@ async function startServer() {
             res.status(500).json({ success: false, error: err.message });
         }
     });
+
+    // 4. DELETE /api/registrations/:id - Delete a registration
+    app.delete('/api/registrations/:id', requireAdmin, async (req, res) => {
+        try {
+            const { id } = req.params;
+            console.log(`[DELETE] Attempting to delete registration with ID: ${id}`);
+            
+            const registration = await findRegistrationById(id);
+            if (!registration) {
+                console.log(`[DELETE] Registration not found: ${id}`);
+                return res.status(404).json({ success: false, error: 'Registration not found' });
+            }
+            
+            console.log(`[DELETE] Found registration: ${registration.regNumber}`);
+            const deleted = await deleteRegistration(id);
+            console.log(`[DELETE] Delete result: ${deleted}`);
+            
+            if (!deleted) {
+                return res.status(500).json({ success: false, error: 'Failed to delete registration' });
+            }
+            
+            console.log(`[DELETE] Successfully deleted registration: ${registration.regNumber}`);
+            res.json({ success: true, message: 'Registration deleted successfully' });
+        }
+        catch (err) {
+            console.error(`[DELETE] Error deleting registration:`, err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     const confirmCashfreePayment = async (orderId) => {
         const registration = await findRegistrationByCashfreeOrderId(orderId);
         if (!registration) throw Object.assign(new Error('Cashfree order is not linked to a registration.'), { status: 404 });
@@ -459,10 +490,12 @@ async function startServer() {
                 return res.status(403).json({ success: false, error: 'Registration is currently closed by the administrator.' });
             }
             if (configCheck.registrationStartDate && new Date(configCheck.registrationStartDate) > now) {
-                return res.status(403).json({ success: false, error: `Registration has not started yet. It opens on ${new Date(configCheck.registrationStartDate).toLocaleString()}.` });
+                const startDate = new Date(configCheck.registrationStartDate);
+                return res.status(403).json({ success: false, error: `Registration has not started yet. It opens on ${startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at ${startDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.` });
             }
             if (configCheck.registrationEndDate && new Date(configCheck.registrationEndDate) < now) {
-                return res.status(403).json({ success: false, error: `Registration deadline has passed. It closed on ${new Date(configCheck.registrationEndDate).toLocaleString()}.` });
+                const endDate = new Date(configCheck.registrationEndDate);
+                return res.status(403).json({ success: false, error: `Registration deadline has passed. It closed on ${endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at ${endDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.` });
             }
             if (typeof firstName !== 'string' || !firstName.trim() || typeof lastName !== 'string' || !lastName.trim()) {
                 return res.status(400).json({ success: false, error: 'First and Last name are required' });

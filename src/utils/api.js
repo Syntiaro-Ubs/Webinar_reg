@@ -54,6 +54,16 @@ export async function fetchBackendRegistrations() {
     const json = await res.json();
     return json.data;
 }
+export async function deleteBackendRegistration(id) {
+    const res = await fetch(apiUrl(`/api/registrations/${id}`), {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Failed to delete registration');
+    return true;
+}
 export async function getCashfreePaymentStatus(orderId) {
     const res = await fetch(apiUrl(`/api/payments/cashfree/${encodeURIComponent(orderId)}/status`), {
         cache: 'no-store'

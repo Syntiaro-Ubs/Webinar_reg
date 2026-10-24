@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DEFAULT_WEBINAR_CONFIG } from '../../data/defaultConfig';
 import { SuccessReceiptModal } from '../SuccessReceiptModal';
-import { apiUrl, saveBackendConfig, fetchAdminSession, loginAdmin, logoutAdmin } from '../../utils/api';
+import { apiUrl, saveBackendConfig, fetchAdminSession, loginAdmin, logoutAdmin, deleteBackendRegistration } from '../../utils/api';
 import { Settings, Users, Search, Plus, Trash2, CheckCircle, Calendar, Clock, XCircle, Save, RotateCcw, Eye, FileSpreadsheet, Building2, BookOpen, MessageCircle, ShieldCheck, Check, BarChart3, X, Copy, Share2, Link2, Timer, ToggleLeft, ToggleRight } from 'lucide-react';
 export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefreshRegistrations, onAdminLogout }) => {
     const [activeTab, setActiveTab] = useState('submissions');
@@ -27,6 +27,9 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
     const [adminPassword, setAdminPassword] = useState('');
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
+    // Delete confirmation modal
+    const [deleteConfirm, setDeleteConfirm] = useState(null); // { reg } | null
+    const [isDeleting, setIsDeleting] = useState(false);
     useEffect(() => setFormConfig({ ...config }), [config]);
     useEffect(() => {
         let mounted = true;
@@ -119,6 +122,24 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             onAdminLogout?.();
         }
     };
+    const handleDeleteRegistration = (reg) => {
+        setDeleteConfirm({ reg });
+    };
+    const confirmDelete = async () => {
+        if (!deleteConfirm) return;
+        setIsDeleting(true);
+        try {
+            await deleteBackendRegistration(deleteConfirm.reg.id);
+            setDeleteConfirm(null);
+            showTempNotice(`Registration ${deleteConfirm.reg.regNumber} deleted successfully`);
+            await onRefreshRegistrations();
+        } catch (err) {
+            showTempNotice(err.message || 'Failed to delete registration');
+            setDeleteConfirm(null);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
     const handleResetDefaults = async () => {
         if (window.confirm('Reset all college branding and webinar form settings to default?')) {
             try {
@@ -177,8 +198,8 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
     const totalRevenue = registrations
         .filter((r) => r.paymentStatus === 'verified')
         .reduce((sum, r) => sum + r.amount, 0);
-    // CSV Export
-    const handleExportCSV = () => {
+    // CSV Export — reusable for both filtered view and per-college downloads
+    const buildCSV = (dataRows) => {
         const headers = [
             'Registration ID',
             'College Name',
@@ -201,7 +222,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             'Registration Time',
             'Notes'
         ];
-        const rows = filteredRegistrations.map((r) => [
+        const rows = dataRows.map((r) => [
             `"${r.regNumber}"`,
             `"${r.collegeName || ''}"`,
             `"${r.firstName}"`,
@@ -223,16 +244,44 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             `"${r.registeredAt}"`,
             `"${(r.notes || '').replace(/"/g, '""')}"`
         ]);
-        const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+        return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    };
+    const triggerDownload = (csvContent, filename) => {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `Webinar_Registrations_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.setAttribute('download', filename);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
+    const handleExportCSV = () => {
+        const label = collegeFilter !== 'all'
+            ? collegeFilter.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)
+            : 'All';
+        const filename = `Webinar_Registrations_${label}_${new Date().toISOString().slice(0, 10)}.csv`;
+        triggerDownload(buildCSV(filteredRegistrations), filename);
+    };
+    const handleExportCollegeCSV = (collegeName) => {
+        const collegeRegs = registrations.filter((r) => r.collegeName === collegeName);
+        const safeLabel = collegeName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50);
+        const filename = `Webinar_${safeLabel}_${new Date().toISOString().slice(0, 10)}.csv`;
+        triggerDownload(buildCSV(collegeRegs), filename);
+        showTempNotice(`Downloaded CSV for ${collegeName} (${collegeRegs.length} students)`);
+    };
+    // College-wise summary for the download panel
+    const collegeBreakdown = uniqueColleges.map((clg) => {
+        const clgRegs = registrations.filter((r) => r.collegeName === clg);
+        return {
+            name: clg,
+            total: clgRegs.length,
+            verified: clgRegs.filter((r) => r.paymentStatus === 'verified').length,
+            pending: clgRegs.filter((r) => r.paymentStatus === 'pending').length,
+            revenue: clgRegs.filter((r) => r.paymentStatus === 'verified').reduce((s, r) => s + (Number(r.amount) || 0), 0),
+        };
+    });
     if (!authChecked) {
         return <div className="py-16 text-center text-sm text-slate-500">Checking admin session…</div>;
     }
@@ -254,6 +303,63 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
     }
     return (<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)'}}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-5 animate-[fadeIn_0.15s_ease]">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-600"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-bold text-slate-900">Delete Registration?</h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  You are about to permanently delete the registration for:
+                </p>
+                <div className="mt-2.5 bg-slate-50 rounded-xl border border-slate-200 px-3.5 py-2.5 space-y-0.5">
+                  <p className="text-sm font-bold text-slate-900">
+                    {[deleteConfirm.reg.firstName, deleteConfirm.reg.middleName, deleteConfirm.reg.lastName].filter(Boolean).join(' ')}
+                  </p>
+                  <p className="text-xs text-slate-500">{deleteConfirm.reg.email}</p>
+                  <p className="text-[11px] font-mono text-slate-400 mt-1">{deleteConfirm.reg.regNumber}</p>
+                </div>
+                <p className="text-xs text-red-700 font-semibold mt-3 flex items-center gap-1.5">
+                  <XCircle className="w-3.5 h-3.5"/> This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                    Deleting…
+                  </>
+                ) : (
+                  <><Trash2 className="w-3.5 h-3.5"/>Delete permanently</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notice */}
       {actionNotice && (<div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg flex items-center gap-2 border border-slate-700 sm:max-w-md">
           <CheckCircle className="w-4 h-4 text-emerald-400"/>
@@ -389,10 +495,71 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
 
               <button type="button" onClick={handleExportCSV} className="flex items-center justify-center gap-1.5 px-2 sm:px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all min-w-0 shadow-2xs cursor-pointer">
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400"/>
-                <span>Export CSV</span>
+                <span className="truncate">
+                  {collegeFilter !== 'all' ? `Export: ${collegeFilter.split(' ').slice(0, 3).join(' ')}` : 'Export CSV'}
+                </span>
               </button>
             </div>
           </div>
+
+          {/* College-wise Download Panel */}
+          {collegeBreakdown.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/70">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-indigo-600"/>
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">College-wise Download</span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">{collegeBreakdown.length} college{collegeBreakdown.length !== 1 ? 's' : ''}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    collegeBreakdown.forEach((c, i) =>
+                      setTimeout(() => handleExportCollegeCSV(c.name), i * 300)
+                    );
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors"
+                >
+                  <FileSpreadsheet className="w-3 h-3"/>
+                  Download All Colleges
+                </button>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {collegeBreakdown.map((clg) => (
+                  <div key={clg.name} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50/60 transition-colors">
+                    {/* College name & stats */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate" title={clg.name}>{clg.name}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[10px] text-slate-500 font-mono">{clg.total} student{clg.total !== 1 ? 's' : ''}</span>
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
+                          <CheckCircle className="w-2.5 h-2.5"/>{clg.verified} verified
+                        </span>
+                        {clg.pending > 0 && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700">
+                            <Clock className="w-2.5 h-2.5"/>{clg.pending} pending
+                          </span>
+                        )}
+                        {clg.revenue > 0 && (
+                          <span className="text-[10px] font-semibold text-slate-600">₹{clg.revenue}</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Download button */}
+                    <button
+                      type="button"
+                      onClick={() => handleExportCollegeCSV(clg.name)}
+                      title={`Download CSV for ${clg.name}`}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 text-slate-700 text-[11px] font-semibold transition-colors"
+                    >
+                      <FileSpreadsheet className="w-3 h-3 text-emerald-600"/>
+                      Download CSV
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Registrations Data Table */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
@@ -488,6 +655,10 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                             {/* View Pass / Receipt */}
                             <button type="button" onClick={() => setInspectRegistration(reg)} title="Inspect E-Receipt" className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer">
                               <Eye className="w-3.5 h-3.5"/>
+                            </button>
+                            {/* Delete Registration */}
+                            <button type="button" onClick={() => handleDeleteRegistration(reg)} title="Delete Registration" className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 transition-colors cursor-pointer">
+                              <Trash2 className="w-3.5 h-3.5"/>
                             </button>
                           </div>
                         </td>
@@ -598,8 +769,8 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
                   <div className={`w-2.5 h-2.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}/>
                   {isActive && <span>● Registration is LIVE and accepting students</span>}
                   {isManuallyClosed && <span>● Registration is manually CLOSED by admin</span>}
-                  {!isManuallyClosed && isBeforeStart && <span>● Registration has not started yet — opens {start.toLocaleString()}</span>}
-                  {!isManuallyClosed && !isBeforeStart && isAfterEnd && <span>● Registration EXPIRED — closed on {end.toLocaleString()}</span>}
+                  {!isManuallyClosed && isBeforeStart && <span>● Registration has not started yet — opens {start.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at {start.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                  {!isManuallyClosed && !isBeforeStart && isAfterEnd && <span>● Registration EXPIRED — closed on {end.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at {end.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
                 </div>
               );
             })()}

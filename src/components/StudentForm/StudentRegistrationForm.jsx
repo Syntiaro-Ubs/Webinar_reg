@@ -183,9 +183,9 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
     if (isManualClosed) {
         closedMessage = 'Registration is currently closed by the administrator.';
     } else if (isBeforeStart) {
-        closedMessage = `Registration has not started yet. It opens on ${new Date(config.registrationStartDate).toLocaleString()}.`;
+        closedMessage = `Registration has not started yet. It opens on ${new Date(config.registrationStartDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at ${new Date(config.registrationStartDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
     } else if (isAfterEnd) {
-        closedMessage = `The registration deadline has passed. It closed on ${new Date(config.registrationEndDate).toLocaleString()}.`;
+        closedMessage = `The registration deadline has passed. It closed on ${new Date(config.registrationEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} at ${new Date(config.registrationEndDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
     }
 
     if (isRegistrationClosed) {
