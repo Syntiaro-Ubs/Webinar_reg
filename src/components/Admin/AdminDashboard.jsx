@@ -8,6 +8,7 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
     // Customizer state
     const [formConfig, setFormConfig] = useState({ ...config });
     const [newStreamInput, setNewStreamInput] = useState('');
+    const [newCollegeInput, setNewCollegeInput] = useState('');
     const [showStreamPicker, setShowStreamPicker] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveNotice, setSaveNotice] = useState(null);
@@ -166,6 +167,22 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
         setFormConfig((prev) => ({
             ...prev,
             availableStreams: prev.availableStreams.filter((s) => s !== streamToRemove)
+        }));
+    };
+    // Add / remove colleges
+    const handleAddCollege = () => {
+        if (newCollegeInput.trim() && !formConfig.availableColleges.includes(newCollegeInput.trim())) {
+            setFormConfig((prev) => ({
+                ...prev,
+                availableColleges: [...(prev.availableColleges || []), newCollegeInput.trim()]
+            }));
+            setNewCollegeInput('');
+        }
+    };
+    const handleRemoveCollege = (collegeToRemove) => {
+        setFormConfig((prev) => ({
+            ...prev,
+            availableColleges: (prev.availableColleges || []).filter((c) => c !== collegeToRemove)
         }));
     };
     // Filter registrations
@@ -776,33 +793,26 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             })()}
           </div>
 
-          {/* Section 1: College Header on Top of the Form */}
+          {/* Section 1: Organization Branding */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
               <Building2 className="w-5 h-5 text-indigo-600"/>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  College Header Details (Top of the Form)
+                  Organization Details
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Customizes the institution name displayed at the very top of the registration portal.
+                  Powered by VedhaAI - Advanced Event Registration Platform
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="grid grid-cols-1 gap-4 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
-                  College / University Name <span className="text-red-500">*</span>
+                  Organization Name <span className="text-red-500">*</span>
                 </label>
-                <input type="text" value={formConfig.collegeName} onChange={(e) => setFormConfig({ ...formConfig, collegeName: e.target.value })} placeholder="e.g. Pune Institute of Computer Technology (PICT)" required className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 font-bold text-slate-900"/>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Department / Organizing Cell Subtitle
-                </label>
-                <input type="text" value={formConfig.collegeSubtitle} onChange={(e) => setFormConfig({ ...formConfig, collegeSubtitle: e.target.value })} placeholder="e.g. Department of Computer Engineering" className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
+                <input type="text" value={formConfig.collegeName} onChange={(e) => setFormConfig({ ...formConfig, collegeName: e.target.value })} placeholder="e.g. VedhaAI" required className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 font-bold text-slate-900"/>
               </div>
             </div>
           </div>
@@ -901,7 +911,46 @@ export const AdminDashboard = ({ config, onUpdateConfig, registrations, onRefres
             </div>
           </div>
 
-          {/* Section 4: Academic Streams Customizer */}
+          {/* Section 4: Colleges Customizer */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
+              <Building2 className="w-5 h-5 text-indigo-600"/>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Customizable College / Institution List
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Manage available colleges in the student registration dropdown.
+                </p>
+              </div>
+            </div>
+
+            {/* Custom College Input */}
+            <div className="flex items-center gap-2">
+              <input type="text" value={newCollegeInput} onChange={(e) => setNewCollegeInput(e.target.value)} onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCollege();
+                }
+            }} placeholder="Type college name..." className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"/>
+              <button type="button" onClick={handleAddCollege} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0">
+                <Plus className="w-3.5 h-3.5"/>
+                <span>Add Custom</span>
+              </button>
+            </div>
+
+            {/* Currently Added Colleges */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-2">
+              {(formConfig.availableColleges || []).map((c) => (<div key={c} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+                  <span className="font-semibold text-slate-800 truncate pr-2">{c}</span>
+                  <button type="button" onClick={() => handleRemoveCollege(c)} className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer">
+                    <Trash2 className="w-3.5 h-3.5"/>
+                  </button>
+                </div>))}
+            </div>
+          </div>
+
+          {/* Section 5: Academic Streams Customizer */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
               <BookOpen className="w-5 h-5 text-indigo-600"/>

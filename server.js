@@ -53,6 +53,7 @@ const DEFAULT_CONFIG = {
     registrationOpen: true,
     registrationStartDate: '',
     registrationEndDate: '',
+    availableColleges: [],
     availableStreams: [],
     availableYears: [
         '1st Year',
@@ -482,7 +483,7 @@ async function startServer() {
     // Create a Cashfree order for a new student registration.
     app.post('/api/registrations', async (req, res) => {
         try {
-            const { firstName, middleName, lastName, email, phone, dob, gender, stream, year, semester, rollNumber } = req.body;
+            const { firstName, middleName, lastName, email, phone, dob, gender, collegeName, stream, year, semester, rollNumber } = req.body;
             // Check registration time window
             const configCheck = await loadConfig();
             const now = new Date();
@@ -508,6 +509,12 @@ async function startServer() {
             }
             if (typeof dob !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(Date.parse(`${dob}T00:00:00Z`)) || dob > now.toISOString().slice(0, 10)) {
                 return res.status(400).json({ success: false, error: 'Enter a valid date of birth that is not in the future' });
+            }
+            if (typeof collegeName !== 'string' || !collegeName.trim()) {
+                return res.status(400).json({ success: false, error: 'College name is required' });
+            }
+            if (Array.isArray(configCheck.availableColleges) && configCheck.availableColleges.length > 0 && !configCheck.availableColleges.includes(collegeName)) {
+                return res.status(400).json({ success: false, error: 'Select a valid college from the current registration options' });
             }
             if (!Array.isArray(configCheck.availableStreams) || !configCheck.availableStreams.includes(stream)) {
                 return res.status(400).json({ success: false, error: 'Select a valid stream from the current registration options' });
@@ -548,7 +555,7 @@ async function startServer() {
             const newRegistration = {
                 id,
                 regNumber,
-                collegeName: config.collegeName || '',
+                collegeName: collegeName.trim(),
                 firstName: firstName.trim(),
                 middleName: typeof middleName === 'string' ? middleName.trim() : '',
                 lastName: lastName.trim(),

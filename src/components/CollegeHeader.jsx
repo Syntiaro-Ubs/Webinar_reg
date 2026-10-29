@@ -35,10 +35,6 @@ export const CollegeHeader = ({ config }) => {
               <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight leading-snug break-words">
                 {config.collegeName}
               </h1>
-
-              {config.collegeSubtitle && (<p className="text-xs sm:text-sm text-slate-600 mt-0.5 font-normal">
-                  {config.collegeSubtitle}
-                </p>)}
             </div>
           </div>
 

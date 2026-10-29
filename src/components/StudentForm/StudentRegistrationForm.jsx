@@ -31,6 +31,7 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
     const [dob, setDob] = useState('');
     const [gender, setGender] = useState('Male');
     // Page 1: Academic Details
+    const [collegeName, setCollegeName] = useState('');
     const [stream, setStream] = useState(config.availableStreams[0] || '');
     const [year, setYear] = useState(config.availableYears[0] || '');
     const [semester, setSemester] = useState(config.availableSemesters[0] || '');
@@ -68,6 +69,8 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
         if (!dob) {
             err.dob = 'Date of birth is required';
         }
+        if (!collegeName.trim())
+            err.collegeName = 'Please select your college';
         if (!stream)
             err.stream = 'Please select your stream';
         if (!year)
@@ -107,6 +110,7 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
                     phone: phone.trim(),
                     dob,
                     gender,
+                    collegeName: collegeName.trim(),
                     stream,
                     year,
                     semester,
@@ -221,9 +225,6 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
               </div>
 
               <div className="min-w-0 flex-1">
-                {config.collegeSubtitle && (<span className="text-[11px] font-medium text-indigo-600 block truncate">
-                    {config.collegeSubtitle}
-                  </span>)}
                 <h1 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight leading-snug">
                   {config.collegeName}
                 </h1>
@@ -394,6 +395,20 @@ export const StudentRegistrationForm = ({ config, onSubmitSuccess }) => {
             </div>
 
             <div className="space-y-3.5">
+              {/* College Name */}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  College / Institution Name <span className="text-red-500">*</span>
+                </label>
+                <select value={collegeName} onChange={(e) => setCollegeName(e.target.value)} className={`w-full px-3 py-2 text-xs rounded-lg border ${errors.collegeName ? 'border-red-300' : 'border-slate-300'} bg-white hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:border-indigo-600 transition-colors text-slate-800 cursor-pointer`}>
+                  <option value="">-- Select Your College --</option>
+                  {(config.availableColleges || []).map((college) => (<option key={college} value={college}>
+                      {college}
+                    </option>))}
+                </select>
+                {errors.collegeName && <p className="text-xs text-red-600 mt-1">{errors.collegeName}</p>}
+              </div>
+
               {/* Education Stream */}
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">

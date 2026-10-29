@@ -84,12 +84,6 @@ export async function generateReceiptPdf(registration, config) {
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#0f172a');
     doc.text((config.collegeName || 'Institution').toUpperCase(), leftMargin, y, { width: contentWidth - 140 });
 
-    if (config.collegeSubtitle) {
-      y += 18;
-      doc.font('Helvetica').fontSize(8).fillColor('#64748b');
-      doc.text(config.collegeSubtitle, leftMargin, y, { width: contentWidth - 140 });
-    }
-
     // Receipt number (right side)
     const rightBlockX = pageWidth - 50 - 120;
     doc.font('Helvetica').fontSize(7).fillColor('#94a3b8');

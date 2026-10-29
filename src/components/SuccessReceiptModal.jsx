@@ -69,7 +69,6 @@ function CompactReceiptModal({ registration, config, onClose }) {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-950 uppercase tracking-tight leading-tight">{config.collegeName}</h3>
-                  <p className="text-[10px] text-slate-500">{config.collegeSubtitle}</p>
                 </div>
               </div>
               <div className="text-right shrink-0">

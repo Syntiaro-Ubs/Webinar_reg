@@ -17,6 +17,7 @@ export const DEFAULT_WEBINAR_CONFIG = {
     registrationOpen: true,
     registrationStartDate: '',
     registrationEndDate: '',
+    availableColleges: [],
     availableStreams: [],
     availableYears: [
         '1st Year',
